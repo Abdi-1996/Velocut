@@ -22,11 +22,11 @@ music='@Published var musicVolume = 0.8'
 if music not in s: raise RuntimeError('music state missing')
 s=s.replace(music,music+'\n    @Published var audioTimelineStart = 0.0',1)
 
-# v0.4.7 clean UI has already removed topBar/playback from the root.
-old='ZStack{Color(uiColor:.systemGroupedBackground).ignoresSafeArea();VStack(spacing:0){preview.frame(height:min(390,max(255,root.size.height*0.42))).ignoresSafeArea(edges:.top);if let target=curveTarget{CurveEditorPanel(model:model,target:target,onClose:{curveTarget=nil}).frame(maxHeight:.infinity)}else{timeline.frame(maxHeight:.infinity)};bottomBar}.frame(width:root.size.width,height:root.size.height,alignment:.top)}'
-new='ZStack{model.workspaceTheme.background.ignoresSafeArea();adaptiveWorkspace(root)}'
-if old not in s: raise RuntimeError('Editor clean root layout missing')
-s=s.replace(old,new,1)
+# Replace only the root GeometryReader content, regardless of the exact preview sizing from earlier patches.
+root_pattern=re.compile(r'(    var body:some View\{\s*\n\s*GeometryReader\{root in\s*\n)\s*ZStack\{.*?\}(\s*\n\s*\}\s*\n\s*\.sheet\(isPresented:\$model\.isFileImporting\))',re.S)
+replacement=r'''\1            ZStack{model.workspaceTheme.background.ignoresSafeArea();adaptiveWorkspace(root)}\2'''
+s,count=root_pattern.subn(replacement,s,count=1)
+if count != 1: raise RuntimeError('Editor root GeometryReader not found')
 
 mark='    private var topBar:some View'
 if mark not in s: raise RuntimeError('topbar declaration missing')
@@ -60,12 +60,10 @@ insert='''    @ViewBuilder private func adaptiveWorkspace(_ root: GeometryProxy)
 '''
 s=s.replace(mark,insert+mark,1)
 
-# Header controls: compact track collapse + common height scale.
 header='Label("Таймлайн",systemImage:"timeline.selection")'
 if header not in s: raise RuntimeError('timeline header missing')
 s=s.replace(header, 'Label("Таймлайн",systemImage:"timeline.selection");Button{withAnimation(.snappy){if model.collapsedTracks.contains(0){model.collapsedTracks.remove(0)}else{model.collapsedTracks.insert(0)}}}label:{Image(systemName:model.collapsedTracks.contains(0) ? "chevron.right":"chevron.down")};Slider(value:$model.trackHeightScale,in:0.65...1.8).frame(width:92)',1)
 
-# Wrap existing timeline in a ZStack and add a true visible A1 row without disturbing old video geometry.
 timeline_sig='    private var timeline:some View{'
 pos=s.find(timeline_sig)
 if pos<0: raise RuntimeError('timeline missing')
