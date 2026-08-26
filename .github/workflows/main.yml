@@ -1,0 +1,150 @@
+name: Build EditFlow IPA from ZIP
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "**/*.zip"
+      - "**/*.zip.part-*"
+      - ".github/workflows/build-editflow-from-zip.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-ipa:
+    name: Build unsigned IPA
+    runs-on: macos-15
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Find, assemble and unpack EditFlow ZIP
+        id: unpack
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ZIP_FILE="$(find . -maxdepth 4 -type f -iname 'EditFlow*.zip' -print -quit)"
+          if [[ -z "$ZIP_FILE" ]]; then
+            ZIP_FILE="$(find . -maxdepth 4 -type f -iname '*.zip' -print -quit)"
+          fi
+
+          if [[ -z "$ZIP_FILE" ]]; then
+            FIRST_PART="$(find . -maxdepth 4 -type f -iname 'EditFlow*.zip.part-*' -print | sort | head -n 1)"
+            if [[ -z "$FIRST_PART" ]]; then
+              FIRST_PART="$(find . -maxdepth 4 -type f -iname '*.zip.part-*' -print | sort | head -n 1)"
+            fi
+
+            if [[ -z "$FIRST_PART" ]]; then
+              echo "::error::Neither a ZIP file nor ZIP parts were found."
+              exit 1
+            fi
+
+            PART_PREFIX="${FIRST_PART%.part-*}"
+            PART_DIR="$(dirname "$FIRST_PART")"
+            PART_NAME="$(basename "$PART_PREFIX")"
+            ZIP_PARTS=()
+            while IFS= read -r PART_FILE; do
+              ZIP_PARTS+=("$PART_FILE")
+            done < <(find "$PART_DIR" -maxdepth 1 -type f -name "$PART_NAME.part-*" -print | sort)
+
+            if (( ${#ZIP_PARTS[@]} < 2 )); then
+              echo "::error::Only one archive part was found. Upload every .zip.part-* file first."
+              exit 1
+            fi
+
+            ZIP_FILE="$RUNNER_TEMP/$PART_NAME"
+            cat "${ZIP_PARTS[@]}" > "$ZIP_FILE"
+            echo "Assembled ${#ZIP_PARTS[@]} archive parts into $ZIP_FILE"
+          fi
+
+          unzip -tq "$ZIP_FILE"
+
+          SOURCE_DIR="$RUNNER_TEMP/editflow-source"
+          rm -rf "$SOURCE_DIR"
+          mkdir -p "$SOURCE_DIR"
+          unzip -q "$ZIP_FILE" -d "$SOURCE_DIR"
+
+          PROJECT_YML="$(find "$SOURCE_DIR" -type f -name project.yml -print -quit)"
+          if [[ -z "$PROJECT_YML" ]]; then
+            echo "::error::project.yml was not found inside $ZIP_FILE."
+            exit 1
+          fi
+
+          PROJECT_ROOT="$(dirname "$PROJECT_YML")"
+          echo "Using archive: $ZIP_FILE"
+          echo "Project root: $PROJECT_ROOT"
+          echo "project_root=$PROJECT_ROOT" >> "$GITHUB_OUTPUT"
+
+      - name: Select Xcode 16.4
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: |
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+          xcodegen --version
+
+      - name: Generate Xcode project
+        working-directory: ${{ steps.unpack.outputs.project_root }}
+        run: |
+          set -euo pipefail
+          test -s EditFlow/Resources/Models/RealESRGAN_x4plus.mlpackage/Data/com.apple.CoreML/weights/weight.bin
+          test -s EditFlow/Resources/Models/realesr-general-x4v3.mlpackage/Data/com.apple.CoreML/weights/weight.bin
+          xcodegen generate
+          test -d EditFlow.xcodeproj
+          xcodebuild -list -project EditFlow.xcodeproj
+
+      - name: Build EditFlow for iPhone and iPad
+        working-directory: ${{ steps.unpack.outputs.project_root }}
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project EditFlow.xcodeproj \
+            -scheme EditFlow \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination "generic/platform=iOS" \
+            -derivedDataPath "$RUNNER_TEMP/EditFlowDerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            clean build | tee "$GITHUB_WORKSPACE/xcodebuild.log"
+
+      - name: Package unsigned IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PRODUCTS_DIR="$RUNNER_TEMP/EditFlowDerivedData/Build/Products/Release-iphoneos"
+          APP_PATH="$(find "$PRODUCTS_DIR" -maxdepth 1 -type d -name '*.app' -print -quit)"
+          if [[ -z "$APP_PATH" ]]; then
+            echo "::error::The compiled .app bundle was not found."
+            exit 1
+          fi
+
+          PAYLOAD_DIR="$RUNNER_TEMP/EditFlowPayload"
+          rm -rf "$PAYLOAD_DIR"
+          mkdir -p "$PAYLOAD_DIR/Payload"
+          ditto "$APP_PATH" "$PAYLOAD_DIR/Payload/$(basename "$APP_PATH")"
+
+          cd "$PAYLOAD_DIR"
+          zip -qry "$GITHUB_WORKSPACE/EditFlow-unsigned.ipa" Payload
+          test -s "$GITHUB_WORKSPACE/EditFlow-unsigned.ipa"
+
+      - name: Upload IPA and build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: EditFlow-iOS-${{ github.run_number }}
+          path: |
+            EditFlow-unsigned.ipa
+            xcodebuild.log
+          if-no-files-found: warn
+          retention-days: 30
