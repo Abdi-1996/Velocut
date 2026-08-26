@@ -1,20 +1,25 @@
 name: Build VeloCut AI IPA
+run-name: VeloCut v0.4.8 • ${{ github.sha }}
 
 on:
   workflow_dispatch:
   push:
-    branches: [ velocut-build ]
+    branches: [ main ]
+    paths:
+      - 'VeloCutAI/**'
+      - '.github/workflows/main.yml'
+
+permissions:
+  contents: read
 
 concurrency:
   group: velocut-build
   cancel-in-progress: true
 
-permissions:
-  contents: read
-
 jobs:
   build:
     runs-on: macos-15
+    timeout-minutes: 60
 
     steps:
       - name: Checkout
@@ -32,40 +37,28 @@ jobs:
 
       - name: Patch original v0.4 interactions
         run: python3 VeloCutAI/patch_v04_interactions.py
-
       - name: Patch v0.4.3 smooth finishes
         run: python3 VeloCutAI/patch_v043_finish.py
-
       - name: Patch v0.4.4 curve UI
         run: python3 VeloCutAI/patch_v044_curve_ui.py
-
       - name: Patch v0.4.4 compile fixes
         run: python3 VeloCutAI/patch_v044_compile.py
-
       - name: Fix v0.4.5 patch matchers
         run: python3 VeloCutAI/patch_v045_matcher_fix.py
-
       - name: Fix v0.4.5 clip card matcher
         run: python3 VeloCutAI/patch_v045_card_matcher.py
-
       - name: Patch v0.4.5 pro UI
         run: python3 VeloCutAI/patch_v045_pro_ui.py
-
       - name: Patch v0.4.5 compile fixes
         run: python3 VeloCutAI/patch_v045_compile.py
-
       - name: Restore stable v0.4.6 curve editor
         run: python3 VeloCutAI/patch_v046_curve_stability.py
-
       - name: Fix v0.4.7 patch matcher
         run: python3 VeloCutAI/patch_v047_matcher_fix.py
-
       - name: Patch v0.4.7 clean UI and saved curves
         run: python3 VeloCutAI/patch_v047_clean_ui.py
-
       - name: Patch v0.4.7 compile fixes
         run: python3 VeloCutAI/patch_v047_compile.py
-
       - name: Patch v0.4.8 RIFE AI Smooth
         run: python3 VeloCutAI/patch_v048_rife_ai.py
 
