@@ -4,15 +4,12 @@ import re
 p=Path('VeloCutAI/VeloCutAI/VeloCutV4.swift')
 s=p.read_text()
 
-# Track imported audio duration so A1 has a real time width.
 state='@Published var audioTimelineStart = 0.0'
 if state not in s: raise RuntimeError('audioTimelineStart missing')
 s=s.replace(state,state+'\n    @Published var audioDuration = 0.0',1)
 
-# Populate duration whenever an audio file is imported/extracted.
 needle='audioTimelineStart = projectTime\n        beatMarkers = []'
 if needle not in s:
-    # v0.5 matcher may place beat reset immediately after the import block; match structurally instead.
     s,count=re.subn(r'(musicName\s*=\s*url\.deletingPathExtension\(\)\.lastPathComponent\n\s*audioTimelineStart\s*=\s*projectTime)',r'''\1
         Task {
             if let d = try? await asset(for:url).load(.duration) {
@@ -29,24 +26,23 @@ else:
         }
         beatMarkers = []''',1)
 
-# Reset A1 metadata on delete.
 s,count=re.subn(r'(func removeMusic\(\) \{\n\s*musicURL = nil\n\s*musicName = nil)',r'''\1
         audioDuration = 0
         audioTimelineStart = 0''',s,count=1)
 if count!=1: raise RuntimeError('removeMusic reset anchor missing')
 
-# Apply the global height slider to every video lane. Collapsed tracks remain compact.
-old='let laneHeight:(Int)->CGFloat={laneHeights[$0] ?? 46}'
-new='let laneHeight:(Int)->CGFloat={lane in model.collapsedTracks.contains(lane) ? 28 : max(32,(laneHeights[lane] ?? 46)*CGFloat(model.trackHeightScale))}'
-if old not in s: raise RuntimeError('laneHeight closure missing')
-s=s.replace(old,new,1)
+# Match any prior laneHeight closure formatting.
+lane_pattern=re.compile(r'let laneHeight:\(Int\)->CGFloat=\{[^\n]*\}')
+lane_repl='let laneHeight:(Int)->CGFloat={lane in model.collapsedTracks.contains(lane) ? 28 : max(32,(laneHeights[lane] ?? 46)*CGFloat(model.trackHeightScale))}'
+s,count=lane_pattern.subn(lane_repl,s,count=1)
+if count!=1: raise RuntimeError('laneHeight closure missing')
 
-# Scale inline curve rows as well.
-s=s.replace('let pps=34.0*model.timelineZoom, center=geo.size.width/2, rulerH=22.0, fxH=42.0, curveH=56.0',
-            'let pps=34.0*model.timelineZoom, center=geo.size.width/2, rulerH=22.0, fxH=max(30,42.0*CGFloat(model.trackHeightScale)), curveH=max(34,56.0*CGFloat(model.trackHeightScale))',1)
+# Match the canvas constants regardless of spacing/previous formatting.
+s,count=re.subn(r'let pps=34\.0\*model\.timelineZoom, center=geo\.size\.width/2, rulerH=22\.0, fxH=[^,\n]+, curveH=[^\n]+',
+'''let pps=34.0*model.timelineZoom, center=geo.size.width/2, rulerH=22.0, fxH=max(30,42.0*CGFloat(model.trackHeightScale)), curveH=max(34,56.0*CGFloat(model.trackHeightScale))''',s,count=1)
+if count!=1: raise RuntimeError('timeline constants missing')
 
-# Required canvas height must use effective heights, otherwise the slider only changes drawing but clips it.
-height_pattern=re.compile(r'''    private var timelineRequiredHeight:CGFloat \{\n        let base:CGFloat = 22 \+ 42 \+ 12\n        let video = \(0\.\.<3\)\.reduce\(CGFloat\.zero\) \{ \$0 \+ \(laneHeights\[\$1\] \?\? 46\) \}\n        let curves = CGFloat\(expandedLanes\.count\) \* 56\n        return max\(230,base\+video\+curves\)\n    \}''')
+height_pattern=re.compile(r'    private var timelineRequiredHeight:CGFloat \{.*?\n    \}',re.S)
 height_repl='''    private var timelineRequiredHeight:CGFloat {
         let scale=CGFloat(model.trackHeightScale)
         let base:CGFloat = 22 + max(30,42*scale) + 12
@@ -58,18 +54,16 @@ height_repl='''    private var timelineRequiredHeight:CGFloat {
 s,count=height_pattern.subn(height_repl,s,count=1)
 if count!=1: raise RuntimeError('timelineRequiredHeight block missing')
 
-# A1 must be part of the timeline panel, not an independent row outside it.
 s=s.replace('else{timeline;audioLaneV50}', 'else{timeline}',1)
 s=s.replace('else{VStack(spacing:0){timeline.frame(maxHeight:.infinity);audioLaneV50}}', 'else{timeline.frame(maxHeight:.infinity)}',1)
 
-canvas_row='ScrollView(.vertical,showsIndicators:false){GeometryReader{geo in timelineCanvas(geo)}.frame(height:timelineRequiredHeight)}.frame(minHeight:230,maxHeight:360)'
-if canvas_row not in s: raise RuntimeError('timeline scroll row missing')
-s=s.replace(canvas_row,'''VStack(spacing:4){
+canvas_pattern=re.compile(r'ScrollView\(\.vertical,showsIndicators:false\)\{GeometryReader\{geo in timelineCanvas\(geo\)\}\.frame\(height:timelineRequiredHeight\)\}\.frame\(minHeight:230,maxHeight:360\)')
+s,count=canvas_pattern.subn('''VStack(spacing:4){
             ScrollView(.vertical,showsIndicators:false){GeometryReader{geo in timelineCanvas(geo)}.frame(height:timelineRequiredHeight)}.frame(minHeight:180,maxHeight:360)
             audioLaneV50
-        }''',1)
+        }''',s,count=1)
+if count!=1: raise RuntimeError('timeline scroll row missing')
 
-# Replace A1 with a time-synchronised clip lane using the same pps and center as video tracks.
 audio_pattern=re.compile(r'    private var audioLaneV50: some View \{.*?\n    \}\n\n    private var bottomBar:',re.S)
 audio_repl=r'''    private var audioLaneV50: some View {
         GeometryReader{geo in
@@ -115,7 +109,6 @@ audio_repl=r'''    private var audioLaneV50: some View {
 s,count=audio_pattern.subn(audio_repl,s,count=1)
 if count!=1: raise RuntimeError('audioLaneV50 block missing')
 
-# Playback controls: time on the left; Play/Pause, Undo, Redo grouped at lower-right of Preview.
 play_pattern=re.compile(r'    private var playback:some View\{.*?\n\n    private var timeline:',re.S)
 play_repl=r'''    private var playback:some View{
         HStack(spacing:8){
