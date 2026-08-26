@@ -80,19 +80,21 @@ if settings_anchor not in s:
     raise RuntimeError('Curve AI settings insertion point not found')
 s = s.replace(settings_anchor, settings_block, 1)
 
-# Replace export completion with an optional RIFE pass. Match the startExport block
-# structurally rather than relying on one exact minified line, because earlier
-# v0.4.x patches may alter whitespace/formatting.
+# Replace only the export completion tail of startExport. The beginning marker uses
+# the short `c` continuation variable, so it does not match the separate Merge export.
 export_start_marker = 'await withCheckedContinuation { c in session.exportAsynchronously { c.resume() } }'
-export_end_marker = 'exportProgress=1'
 export_start = s.find(export_start_marker)
 if export_start < 0:
     raise RuntimeError('startExport async completion marker not found')
-export_end = s.find(export_end_marker, export_start)
-if export_end < 0:
-    raise RuntimeError('startExport progress completion marker not found')
-export_end += len(export_end_marker)
-old_export = s[export_start:export_end]
+
+# Stop immediately before the `} catch { errorMessage...` belonging to startExport.
+# This is independent of spaces around exportedURL/exportProgress and survives all
+# v0.4.x formatting changes.
+tail_match = re.search(r'\n\s*\}\s*catch\s*\{\s*errorMessage', s[export_start:])
+if tail_match is None:
+    raise RuntimeError('startExport catch boundary not found')
+export_end = export_start + tail_match.start()
+
 new_export = '''await withCheckedContinuation { c in session.exportAsynchronously { c.resume() } }
             guard session.status == .completed else { throw session.error ?? NSError(domain:"VeloCut",code:3) }
             exportTimer?.invalidate()
