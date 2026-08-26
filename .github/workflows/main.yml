@@ -1,90 +1,82 @@
-name: Build EditFlow IPA from ZIP
+name: Build VeloCut AI v0.4.8 IPA
+run-name: VeloCut v0.4.8 • ${{ github.sha }}
 
 on:
   workflow_dispatch:
   push:
+    branches: [ main ]
     paths:
-      - "**/*.zip"
-      - "**/*.zip.part-*"
-      - ".github/workflows/build-editflow-from-zip.yml"
+      - '.github/workflows/main.yml'
 
 permissions:
   contents: read
 
+concurrency:
+  group: velocut-v048-build
+  cancel-in-progress: true
+
 jobs:
-  build-ipa:
-    name: Build unsigned IPA
+  build:
+    name: Build unsigned VeloCut IPA
     runs-on: macos-15
     timeout-minutes: 60
 
     steps:
-      - name: Checkout repository
+      - name: Checkout build repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
-      - name: Find, assemble and unpack EditFlow ZIP
-        id: unpack
+      - name: Get VeloCut v0.4.8 source
         shell: bash
         run: |
           set -euo pipefail
+          rm -rf VeloCutSource
+          git -c http.https://github.com/.extraheader= clone \
+            --depth 1 \
+            --branch velocut-build \
+            https://github.com/Abdi-1996/edit.git \
+            VeloCutSource
+          test -f VeloCutSource/VeloCutAI/project.yml
+          test -f VeloCutSource/VeloCutAI/VeloCutAI/VeloCutV48AI.swift
 
-          ZIP_FILE="$(find . -maxdepth 4 -type f -iname 'EditFlow*.zip' -print -quit)"
-          if [[ -z "$ZIP_FILE" ]]; then
-            ZIP_FILE="$(find . -maxdepth 4 -type f -iname '*.zip' -print -quit)"
-          fi
+      - name: Prepare v0.4.2 patcher
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('VeloCutSource/VeloCutAI/patch_v04_interactions.py')
+          s = p.read_text()
+          s = s.replace(r"ForEach\(0<\.\.<3", r"ForEach\(0\.\.<3")
+          p.write_text(s)
+          PY
 
-          if [[ -z "$ZIP_FILE" ]]; then
-            FIRST_PART="$(find . -maxdepth 4 -type f -iname 'EditFlow*.zip.part-*' -print | sort | head -n 1)"
-            if [[ -z "$FIRST_PART" ]]; then
-              FIRST_PART="$(find . -maxdepth 4 -type f -iname '*.zip.part-*' -print | sort | head -n 1)"
-            fi
-
-            if [[ -z "$FIRST_PART" ]]; then
-              echo "::error::Neither a ZIP file nor ZIP parts were found."
-              exit 1
-            fi
-
-            PART_PREFIX="${FIRST_PART%.part-*}"
-            PART_DIR="$(dirname "$FIRST_PART")"
-            PART_NAME="$(basename "$PART_PREFIX")"
-            ZIP_PARTS=()
-            while IFS= read -r PART_FILE; do
-              ZIP_PARTS+=("$PART_FILE")
-            done < <(find "$PART_DIR" -maxdepth 1 -type f -name "$PART_NAME.part-*" -print | sort)
-
-            if (( ${#ZIP_PARTS[@]} < 2 )); then
-              echo "::error::Only one archive part was found. Upload every .zip.part-* file first."
-              exit 1
-            fi
-
-            ZIP_FILE="$RUNNER_TEMP/$PART_NAME"
-            cat "${ZIP_PARTS[@]}" > "$ZIP_FILE"
-            echo "Assembled ${#ZIP_PARTS[@]} archive parts into $ZIP_FILE"
-          fi
-
-          unzip -tq "$ZIP_FILE"
-
-          SOURCE_DIR="$RUNNER_TEMP/editflow-source"
-          rm -rf "$SOURCE_DIR"
-          mkdir -p "$SOURCE_DIR"
-          unzip -q "$ZIP_FILE" -d "$SOURCE_DIR"
-
-          PROJECT_YML="$(find "$SOURCE_DIR" -type f -name project.yml -print -quit)"
-          if [[ -z "$PROJECT_YML" ]]; then
-            echo "::error::project.yml was not found inside $ZIP_FILE."
-            exit 1
-          fi
-
-          PROJECT_ROOT="$(dirname "$PROJECT_YML")"
-          echo "Using archive: $ZIP_FILE"
-          echo "Project root: $PROJECT_ROOT"
-          echo "project_root=$PROJECT_ROOT" >> "$GITHUB_OUTPUT"
+      - name: Apply VeloCut patch chain
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 VeloCutSource/VeloCutAI/patch_v04_interactions.py
+          python3 VeloCutSource/VeloCutAI/patch_v043_finish.py
+          python3 VeloCutSource/VeloCutAI/patch_v044_curve_ui.py
+          python3 VeloCutSource/VeloCutAI/patch_v044_compile.py
+          python3 VeloCutSource/VeloCutAI/patch_v045_matcher_fix.py
+          python3 VeloCutSource/VeloCutAI/patch_v045_card_matcher.py
+          python3 VeloCutSource/VeloCutAI/patch_v045_pro_ui.py
+          python3 VeloCutSource/VeloCutAI/patch_v045_compile.py
+          python3 VeloCutSource/VeloCutAI/patch_v046_curve_stability.py
+          python3 VeloCutSource/VeloCutAI/patch_v047_matcher_fix.py
+          python3 VeloCutSource/VeloCutAI/patch_v047_clean_ui.py
+          python3 VeloCutSource/VeloCutAI/patch_v047_compile.py
+          python3 VeloCutSource/VeloCutAI/patch_v048_rife_ai.py
 
       - name: Select Xcode 16.4
+        shell: bash
         run: |
           sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
           xcodebuild -version
 
       - name: Install XcodeGen
+        shell: bash
         run: |
           if ! command -v xcodegen >/dev/null 2>&1; then
             brew install xcodegen
@@ -92,59 +84,62 @@ jobs:
           xcodegen --version
 
       - name: Generate Xcode project
-        working-directory: ${{ steps.unpack.outputs.project_root }}
+        working-directory: VeloCutSource/VeloCutAI
         run: |
           set -euo pipefail
-          test -s EditFlow/Resources/Models/RealESRGAN_x4plus.mlpackage/Data/com.apple.CoreML/weights/weight.bin
-          test -s EditFlow/Resources/Models/realesr-general-x4v3.mlpackage/Data/com.apple.CoreML/weights/weight.bin
           xcodegen generate
-          test -d EditFlow.xcodeproj
-          xcodebuild -list -project EditFlow.xcodeproj
+          test -d VeloCutAI.xcodeproj
+          xcodebuild -list -project VeloCutAI.xcodeproj
 
-      - name: Build EditFlow for iPhone and iPad
-        working-directory: ${{ steps.unpack.outputs.project_root }}
+      - name: Build unsigned iOS app
+        working-directory: VeloCutSource/VeloCutAI
+        shell: bash
         run: |
           set -o pipefail
           xcodebuild \
-            -project EditFlow.xcodeproj \
-            -scheme EditFlow \
+            -project VeloCutAI.xcodeproj \
+            -scheme VeloCutAI \
             -configuration Release \
             -sdk iphoneos \
-            -destination "generic/platform=iOS" \
-            -derivedDataPath "$RUNNER_TEMP/EditFlowDerivedData" \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/VeloCutDerivedData" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_IDENTITY='' \
             clean build | tee "$GITHUB_WORKSPACE/xcodebuild.log"
 
       - name: Package unsigned IPA
         shell: bash
         run: |
           set -euo pipefail
-
-          PRODUCTS_DIR="$RUNNER_TEMP/EditFlowDerivedData/Build/Products/Release-iphoneos"
-          APP_PATH="$(find "$PRODUCTS_DIR" -maxdepth 1 -type d -name '*.app' -print -quit)"
+          PRODUCTS_DIR="$RUNNER_TEMP/VeloCutDerivedData/Build/Products/Release-iphoneos"
+          APP_PATH="$(find "$PRODUCTS_DIR" -maxdepth 1 -type d -name 'VeloCutAI.app' -print -quit)"
           if [[ -z "$APP_PATH" ]]; then
-            echo "::error::The compiled .app bundle was not found."
+            echo "::error::VeloCutAI.app was not found"
             exit 1
           fi
-
-          PAYLOAD_DIR="$RUNNER_TEMP/EditFlowPayload"
+          PAYLOAD_DIR="$RUNNER_TEMP/VeloCutPayload"
           rm -rf "$PAYLOAD_DIR"
           mkdir -p "$PAYLOAD_DIR/Payload"
-          ditto "$APP_PATH" "$PAYLOAD_DIR/Payload/$(basename "$APP_PATH")"
-
+          ditto "$APP_PATH" "$PAYLOAD_DIR/Payload/VeloCutAI.app"
           cd "$PAYLOAD_DIR"
-          zip -qry "$GITHUB_WORKSPACE/EditFlow-unsigned.ipa" Payload
-          test -s "$GITHUB_WORKSPACE/EditFlow-unsigned.ipa"
+          zip -qry "$GITHUB_WORKSPACE/VeloCutAI-v0.4.8-clean-unsigned.ipa" Payload
+          test -s "$GITHUB_WORKSPACE/VeloCutAI-v0.4.8-clean-unsigned.ipa"
 
-      - name: Upload IPA and build log
+      - name: Upload IPA
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VeloCutAI-v0.4.8-clean-unsigned-ipa
+          path: VeloCutAI-v0.4.8-clean-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: EditFlow-iOS-${{ github.run_number }}
-          path: |
-            EditFlow-unsigned.ipa
-            xcodebuild.log
-          if-no-files-found: warn
-          retention-days: 30
+          name: VeloCutAI-v0.4.8-build-log
+          path: xcodebuild.log
+          if-no-files-found: ignore
+          retention-days: 7
