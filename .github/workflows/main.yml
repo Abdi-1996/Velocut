@@ -59,6 +59,8 @@ jobs:
         run: python3 VeloCutAI/patch_v049_audio_beats.py
       - name: Patch v0.5.0 pro workspace
         run: python3 VeloCutAI/patch_v050_pro_workspace.py
+      - name: Remove floating Preview controls
+        run: python3 VeloCutAI/patch_v051_remove_preview_controls.py
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Generate Xcode project
