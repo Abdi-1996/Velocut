@@ -22,11 +22,9 @@ music='@Published var musicVolume = 0.8'
 if music not in s: raise RuntimeError('music state missing')
 s=s.replace(music,music+'\n    @Published var audioTimelineStart = 0.0',1)
 
-# Replace only the root GeometryReader content, regardless of the exact preview sizing from earlier patches.
-root_pattern=re.compile(r'(    var body:some View\{\s*\n\s*GeometryReader\{root in\s*\n)\s*ZStack\{.*?\}(\s*\n\s*\}\s*\n\s*\.sheet\(isPresented:\$model\.isFileImporting\))',re.S)
-replacement=r'''\1            ZStack{model.workspaceTheme.background.ignoresSafeArea();adaptiveWorkspace(root)}\2'''
-s,count=root_pattern.subn(replacement,s,count=1)
-if count != 1: raise RuntimeError('Editor root GeometryReader not found')
+root_pattern=re.compile(r'ZStack\{Color\(uiColor:\.systemGroupedBackground\)\.ignoresSafeArea\(\);VStack\(spacing:0\)\{preview\.frame\(height:.*?bottomBar\}\.frame\(width:root\.size\.width,height:root\.size\.height,alignment:\.top\)\}',re.S)
+s,count=root_pattern.subn('ZStack{model.workspaceTheme.background.ignoresSafeArea();adaptiveWorkspace(root)}',s,count=1)
+if count != 1: raise RuntimeError('Editor root ZStack not found')
 
 mark='    private var topBar:some View'
 if mark not in s: raise RuntimeError('topbar declaration missing')
