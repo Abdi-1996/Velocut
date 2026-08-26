@@ -69,7 +69,8 @@ enum VeloCutAudioTools {
         guard envelope.count>8 else{throw NSError(domain:"VeloCut.Beat",code:204,userInfo:[NSLocalizedDescriptionKey:"Аудио слишком короткое для анализа"])}
         var flux=[Float](repeating:0,count:envelope.count); for i in 1..<envelope.count{flux[i]=max(0,envelope[i]-envelope[i-1])}
         let rate=sampleRate/Double(windowFrames), sens=min(max(sensitivity,0.05),1), mult=Float(2.45-sens*1.25), radius=max(3,Int(rate*0.18)), minDist=max(2,Int(rate*0.16))
-        var candidates:[(index:Int,time:Double,value:Float)]=[]; var last=-minDist
+        var candidates:[(index:Int,time:Double,value:Float)] = []
+        var last = -minDist
         if flux.count>2 { for i in 1..<(flux.count-1){ let lo=max(0,i-radius),hi=min(flux.count,i+radius+1); var sum:Float=0; for j in lo..<hi{sum += flux[j]}; let threshold=max(0.00001,(sum/Float(max(1,hi-lo)))*mult); guard flux[i]>=threshold,flux[i]>=flux[i-1],flux[i]>=flux[i+1] else{continue}; if i-last<minDist{if let prev=candidates.last,flux[i]>prev.value{candidates[candidates.count-1]=(i,Double(i)/rate,flux[i]);last=i};continue};candidates.append((i,Double(i)/rate,flux[i]));last=i } }
         let lagMin=max(1,Int((60/200.0)*rate)),lagMax=min(flux.count/2,max(lagMin+1,Int((60/60.0)*rate)));var bestLag=0,bestScore = -Double.infinity
         if lagMax>=lagMin{for lag in lagMin...lagMax{var score=0.0,count=0;for i in lag..<flux.count{score += Double(flux[i]*flux[i-lag]);count+=1};if count>0{score/=Double(count)};if score>bestScore{bestScore=score;bestLag=lag}}}
