@@ -1,0 +1,110 @@
+name: Build VeloCut AI IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ velocut-build ]
+
+concurrency:
+  group: velocut-build
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare v0.4.2 patcher
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('VeloCutAI/patch_v04_interactions.py')
+          s = p.read_text()
+          s = s.replace(r"ForEach\(0<\.\.<3", r"ForEach\(0\.\.<3")
+          p.write_text(s)
+          PY
+
+      - name: Patch original v0.4 interactions
+        run: python3 VeloCutAI/patch_v04_interactions.py
+
+      - name: Patch v0.4.3 smooth finishes
+        run: python3 VeloCutAI/patch_v043_finish.py
+
+      - name: Patch v0.4.4 curve UI
+        run: python3 VeloCutAI/patch_v044_curve_ui.py
+
+      - name: Patch v0.4.4 compile fixes
+        run: python3 VeloCutAI/patch_v044_compile.py
+
+      - name: Fix v0.4.5 patch matchers
+        run: python3 VeloCutAI/patch_v045_matcher_fix.py
+
+      - name: Fix v0.4.5 clip card matcher
+        run: python3 VeloCutAI/patch_v045_card_matcher.py
+
+      - name: Patch v0.4.5 pro UI
+        run: python3 VeloCutAI/patch_v045_pro_ui.py
+
+      - name: Patch v0.4.5 compile fixes
+        run: python3 VeloCutAI/patch_v045_compile.py
+
+      - name: Restore stable v0.4.6 curve editor
+        run: python3 VeloCutAI/patch_v046_curve_stability.py
+
+      - name: Fix v0.4.7 patch matcher
+        run: python3 VeloCutAI/patch_v047_matcher_fix.py
+
+      - name: Patch v0.4.7 clean UI and saved curves
+        run: python3 VeloCutAI/patch_v047_clean_ui.py
+
+      - name: Patch v0.4.7 compile fixes
+        run: python3 VeloCutAI/patch_v047_compile.py
+
+      - name: Patch v0.4.8 RIFE AI Smooth
+        run: python3 VeloCutAI/patch_v048_rife_ai.py
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: VeloCutAI
+        run: xcodegen generate
+
+      - name: Build unsigned iOS app
+        working-directory: VeloCutAI
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project VeloCutAI.xcodeproj \
+            -scheme VeloCutAI \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY='' \
+            build
+
+      - name: Package unsigned IPA
+        working-directory: VeloCutAI
+        run: |
+          APP_PATH="build/Build/Products/Release-iphoneos/VeloCutAI.app"
+          test -d "$APP_PATH"
+          rm -rf Payload
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/
+          zip -qry VeloCutAI-v0.4.8-unsigned.ipa Payload
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VeloCutAI-v0.4.8-unsigned-ipa
+          path: VeloCutAI/VeloCutAI-v0.4.8-unsigned.ipa
+          if-no-files-found: error
