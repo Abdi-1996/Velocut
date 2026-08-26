@@ -4,7 +4,6 @@ import re
 p=Path('VeloCutAI/VeloCutAI/VeloCutV4.swift')
 s=p.read_text()
 
-# v0.5 state: real audio lane presentation, track sizing/collapse, adaptive workspace and theme.
 anchor='@Published var snapToBeat = false'
 if anchor not in s: raise RuntimeError('v049 state missing')
 s=s.replace(anchor,anchor+'''\n    @Published var trackHeightScale = 1.0
@@ -18,22 +17,19 @@ s=s.replace(anchor,anchor+'''\n    @Published var trackHeightScale = 1.0
     @Published var audioPitch = 0.0
     @Published var audioSpeed = 1.0''',1)
 
-# Imported/extracted audio becomes a visible A1 timeline clip by keeping source URL and start position.
 s=s.replace('musicURL = url\n        musicName = url.deletingPathExtension().lastPathComponent', 'musicURL = url\n        musicName = url.deletingPathExtension().lastPathComponent\n        audioTimelineStart = projectTime',1)
-# add timeline start state near music vars in original source
 music='@Published var musicVolume = 0.8'
 if music not in s: raise RuntimeError('music state missing')
 s=s.replace(music,music+'\n    @Published var audioTimelineStart = 0.0',1)
 
-# Replace root editor layout with adaptive portrait/landscape workspace. Playback sits immediately below preview.
-old='ZStack{Color(uiColor:.systemGroupedBackground).ignoresSafeArea();VStack(spacing:0){topBar;preview.frame(height:min(350,max(220,root.size.height*0.37)));playback;if let target=curveTarget{CurveEditorPanel(model:model,target:target,onClose:{curveTarget=nil}).frame(maxHeight:.infinity)}else{timeline.frame(maxHeight:.infinity)};bottomBar}.frame(width:root.size.width,height:root.size.height,alignment:.top)}'
+# v0.4.7 clean UI has already removed topBar/playback from the root.
+old='ZStack{Color(uiColor:.systemGroupedBackground).ignoresSafeArea();VStack(spacing:0){preview.frame(height:min(390,max(255,root.size.height*0.42))).ignoresSafeArea(edges:.top);if let target=curveTarget{CurveEditorPanel(model:model,target:target,onClose:{curveTarget=nil}).frame(maxHeight:.infinity)}else{timeline.frame(maxHeight:.infinity)};bottomBar}.frame(width:root.size.width,height:root.size.height,alignment:.top)}'
 new='ZStack{model.workspaceTheme.background.ignoresSafeArea();adaptiveWorkspace(root)}'
-if old not in s: raise RuntimeError('Editor root layout missing')
+if old not in s: raise RuntimeError('Editor clean root layout missing')
 s=s.replace(old,new,1)
 
-# Inject adaptive workspace and resize handle before topBar.
 mark='    private var topBar:some View'
-if mark not in s: raise RuntimeError('topbar missing')
+if mark not in s: raise RuntimeError('topbar declaration missing')
 insert='''    @ViewBuilder private func adaptiveWorkspace(_ root: GeometryProxy)->some View {
         let landscape = root.size.width > root.size.height
         if landscape {
@@ -64,34 +60,23 @@ insert='''    @ViewBuilder private func adaptiveWorkspace(_ root: GeometryProxy)
 '''
 s=s.replace(mark,insert+mark,1)
 
-# Add track scale + collapse controls to timeline header near existing timeline label.
-s=s.replace('Label("Таймлайн",systemImage:"timeline.selection")', 'Label("Таймлайн",systemImage:"timeline.selection");Button{withAnimation(.snappy){if model.collapsedTracks.contains(0){model.collapsedTracks.remove(0)}else{model.collapsedTracks.insert(0)}}}label:{Image(systemName:model.collapsedTracks.contains(0) ? "chevron.right":"chevron.down")};Slider(value:$model.trackHeightScale,in:0.65...1.8).frame(width:92)',1)
+# Header controls: compact track collapse + common height scale.
+header='Label("Таймлайн",systemImage:"timeline.selection")'
+if header not in s: raise RuntimeError('timeline header missing')
+s=s.replace(header, 'Label("Таймлайн",systemImage:"timeline.selection");Button{withAnimation(.snappy){if model.collapsedTracks.contains(0){model.collapsedTracks.remove(0)}else{model.collapsedTracks.insert(0)}}}label:{Image(systemName:model.collapsedTracks.contains(0) ? "chevron.right":"chevron.down")};Slider(value:$model.trackHeightScale,in:0.65...1.8).frame(width:92)',1)
 
-# Append a real visible A1 card under the timeline content by inserting before timeline VStack closes at bottomBar marker.
-# Use overlay to avoid destabilizing old track geometry; card follows playhead coordinates and is horizontally draggable.
+# Wrap existing timeline in a ZStack and add a true visible A1 row without disturbing old video geometry.
 timeline_sig='    private var timeline:some View{'
 pos=s.find(timeline_sig)
 if pos<0: raise RuntimeError('timeline missing')
-# Add audio overlay to the known TimelineCanvas invocation if present.
-canvas='TimelineCanvasV4(model:model'
-idx=s.find(canvas,pos)
-if idx>=0:
-    # place A1 using overlay on timeline container after first .frame(maxHeight:.infinity) in timeline section if available
-    pass
-
-# Add compact A1 row as safe overlay to timeline view via wrapper replacement.
 start=pos+len(timeline_sig)
-# Transform initial VStack to ZStack containing original VStack; close before next property bottomBar.
 nextprop=s.find('    private var bottomBar:',start)
 if nextprop<0: raise RuntimeError('bottomBar marker missing')
 body=s[start:nextprop]
-if body.startswith('VStack'):
-    body='ZStack(alignment:.bottomLeading){'+body+';audioLaneV50}'
-    s=s[:start]+body+s[nextprop:]
-else:
-    raise RuntimeError('timeline body unexpected')
+if not body.startswith('VStack'): raise RuntimeError('timeline body unexpected')
+body='ZStack(alignment:.bottomLeading){'+body+';audioLaneV50}'
+s=s[:start]+body+s[nextprop:]
 
-# Add audio lane + appearance sheet-like inspector helpers before bottomBar.
 mark='    private var bottomBar:'
 extra='''    private var audioLaneV50: some View {
         Group{
