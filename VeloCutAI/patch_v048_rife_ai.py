@@ -13,9 +13,9 @@ ui.write_text(u)
 p = Path('VeloCutAI/VeloCutAI/VeloCutV4.swift')
 s = p.read_text()
 
-# All old Smooth remap checks now mean AI Smooth. It still keeps the denser 120-step
-# time remap, then RIFE synthesizes the missing frames after the normal export.
-s = s.replace('.smooth', '.aiSmooth')
+# Only speed-processing Smooth becomes AI Smooth. CurveInterpolation.smooth must
+# remain untouched because it controls Bezier curve handles/interpolation.
+s = s.replace('speedProcessingMode == .smooth', 'speedProcessingMode == .aiSmooth')
 
 # Model settings. RIFE v4.26 is bundled by the Swift package; Balanced is the safe
 # default for iPhone, with optional Fast/HQ and 2x/4x interpolation.
