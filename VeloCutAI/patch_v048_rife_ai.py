@@ -80,10 +80,19 @@ if settings_anchor not in s:
     raise RuntimeError('Curve AI settings insertion point not found')
 s = s.replace(settings_anchor, settings_block, 1)
 
-# Replace export completion with an optional RIFE pass. Normal export stays exactly
-# as before in Fast mode. AI Smooth post-processes the exported video and then muxes
-# the original audio back in.
-old_export = '''await withCheckedContinuation { c in session.exportAsynchronously { c.resume() } }; guard session.status == .completed else { throw session.error ?? NSError(domain:"VeloCut",code:3) }; exportedURL=out; exportProgress=1'''
+# Replace export completion with an optional RIFE pass. Match the startExport block
+# structurally rather than relying on one exact minified line, because earlier
+# v0.4.x patches may alter whitespace/formatting.
+export_start_marker = 'await withCheckedContinuation { c in session.exportAsynchronously { c.resume() } }'
+export_end_marker = 'exportProgress=1'
+export_start = s.find(export_start_marker)
+if export_start < 0:
+    raise RuntimeError('startExport async completion marker not found')
+export_end = s.find(export_end_marker, export_start)
+if export_end < 0:
+    raise RuntimeError('startExport progress completion marker not found')
+export_end += len(export_end_marker)
+old_export = s[export_start:export_end]
 new_export = '''await withCheckedContinuation { c in session.exportAsynchronously { c.resume() } }
             guard session.status == .completed else { throw session.error ?? NSError(domain:"VeloCut",code:3) }
             exportTimer?.invalidate()
@@ -107,9 +116,7 @@ new_export = '''await withCheckedContinuation { c in session.exportAsynchronousl
                 exportedURL = out
             }
             exportProgress = 1'''
-if old_export not in s:
-    raise RuntimeError('startExport completion block not found')
-s = s.replace(old_export, new_export, 1)
+s = s[:export_start] + new_export + s[export_end:]
 
 # Export overlay explains when the extra AI render pass is running.
 old_overlay = 'Text("Экспорт \\(Int(model.exportProgress*100))%").font(.headline)'
