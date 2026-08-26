@@ -90,10 +90,9 @@ enum VeloCutAudioFX {
             let status=try engine.renderOffline(frames,to:buffer)
             switch status {
             case .success:try output.write(from:buffer)
-            case .insufficientDataFromInput:continue
             case .cannotDoInCurrentContext:continue
             case .error:throw NSError(domain:"VeloCut.AudioFX",code:2,userInfo:[NSLocalizedDescriptionKey:"Не удалось обработать аудиоэффект"])
-            @unknown default:break
+            @unknown default:continue
             }
         }
         player.stop();engine.stop();return outputURL
