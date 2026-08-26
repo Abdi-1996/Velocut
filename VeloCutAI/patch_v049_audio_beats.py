@@ -128,15 +128,15 @@ s = s.replace(
 )
 
 # PhotosPicker state dedicated to extracting audio. It does not add the selected
-# movie to the video timeline.
-inspector_state = '@State private var speedTab=0;var body:some View'
-if inspector_state not in s:
-    raise RuntimeError('InspectorSheet state anchor not found')
-s = s.replace(
-    inspector_state,
-    '@State private var speedTab=0;@State private var extractAudioItem:PhotosPickerItem?;var body:some View',
-    1
+# movie to the video timeline. Match whitespace/format changes from older patches.
+s, count = re.subn(
+    r'(@State\s+private\s+var\s+speedTab\s*=\s*0)',
+    r'\1\n    @State private var extractAudioItem: PhotosPickerItem?',
+    s,
+    count=1
 )
+if count != 1:
+    raise RuntimeError('InspectorSheet speedTab state not found')
 
 # Replace the compact legacy music panel with explicit import/extract controls,
 # beat analysis, BPM display and beat navigation/snap.
