@@ -1,5 +1,5 @@
 name: Build VeloCut AI IPA
-run-name: VeloCut v0.4.8 • ${{ github.sha }}
+run-name: VeloCut v0.4.9 • ${{ github.sha }}
 
 on:
   workflow_dispatch:
@@ -61,6 +61,8 @@ jobs:
         run: python3 VeloCutAI/patch_v047_compile.py
       - name: Patch v0.4.8 RIFE AI Smooth
         run: python3 VeloCutAI/patch_v048_rife_ai.py
+      - name: Patch v0.4.9 audio and beat detector
+        run: python3 VeloCutAI/patch_v049_audio_beats.py
 
       - name: Install XcodeGen
         run: brew install xcodegen
@@ -94,11 +96,11 @@ jobs:
           rm -rf Payload
           mkdir -p Payload
           cp -R "$APP_PATH" Payload/
-          zip -qry VeloCutAI-v0.4.8-unsigned.ipa Payload
+          zip -qry VeloCutAI-v0.4.9-unsigned.ipa Payload
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: VeloCutAI-v0.4.8-unsigned-ipa
-          path: VeloCutAI/VeloCutAI-v0.4.8-unsigned.ipa
+          name: VeloCutAI-v0.4.9-unsigned-ipa
+          path: VeloCutAI/VeloCutAI-v0.4.9-unsigned.ipa
           if-no-files-found: error
