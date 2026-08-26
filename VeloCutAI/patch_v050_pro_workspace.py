@@ -35,14 +35,28 @@ insert='''    @ViewBuilder private func adaptiveWorkspace(_ root: GeometryProxy)
                 HStack(spacing:0){
                     VStack(spacing:0){preview;playback}.frame(width:root.size.width*0.46)
                     Divider()
-                    VStack(spacing:0){workspaceHandle;if let target=curveTarget{CurveEditorPanel(model:model,target:target,onClose:{curveTarget=nil})}else{timeline}}.frame(maxWidth:.infinity)
+                    VStack(spacing:0){
+                        workspaceHandle
+                        if let target=curveTarget {
+                            CurveEditorPanel(model:model,target:target,onClose:{curveTarget=nil})
+                        } else {
+                            timeline
+                            audioLaneV50
+                        }
+                    }.frame(maxWidth:.infinity)
                 }
                 bottomBar
             }
         } else {
             VStack(spacing:0){
-                preview.frame(height:max(150,root.size.height*model.previewSplit));playback;workspaceHandle
-                if let target=curveTarget{CurveEditorPanel(model:model,target:target,onClose:{curveTarget=nil}).frame(maxHeight:.infinity)}else{timeline.frame(maxHeight:.infinity)}
+                preview.frame(height:max(150,root.size.height*model.previewSplit))
+                playback
+                workspaceHandle
+                if let target=curveTarget {
+                    CurveEditorPanel(model:model,target:target,onClose:{curveTarget=nil}).frame(maxHeight:.infinity)
+                } else {
+                    VStack(spacing:0){timeline.frame(maxHeight:.infinity);audioLaneV50}
+                }
                 bottomBar
             }
         }
@@ -62,17 +76,7 @@ header='Label("Таймлайн",systemImage:"timeline.selection")'
 if header not in s: raise RuntimeError('timeline header missing')
 s=s.replace(header, 'Label("Таймлайн",systemImage:"timeline.selection");Button{withAnimation(.snappy){if model.collapsedTracks.contains(0){model.collapsedTracks.remove(0)}else{model.collapsedTracks.insert(0)}}}label:{Image(systemName:model.collapsedTracks.contains(0) ? "chevron.right":"chevron.down")};Slider(value:$model.trackHeightScale,in:0.65...1.8).frame(width:92)',1)
 
-timeline_sig='    private var timeline:some View{'
-pos=s.find(timeline_sig)
-if pos<0: raise RuntimeError('timeline missing')
-start=pos+len(timeline_sig)
-nextprop=s.find('    private var bottomBar:',start)
-if nextprop<0: raise RuntimeError('bottomBar marker missing')
-body=s[start:nextprop]
-if not body.startswith('VStack'): raise RuntimeError('timeline body unexpected')
-body='ZStack(alignment:.bottomLeading){'+body+';audioLaneV50}'
-s=s[:start]+body+s[nextprop:]
-
+# Keep the existing timeline internals untouched. A1 is rendered by adaptiveWorkspace below it.
 mark='    private var bottomBar:'
 extra='''    private var audioLaneV50: some View {
         Group{
