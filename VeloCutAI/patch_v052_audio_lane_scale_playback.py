@@ -31,18 +31,16 @@ s,count=re.subn(r'(func removeMusic\(\) \{\n\s*musicURL = nil\n\s*musicName = ni
         audioTimelineStart = 0''',s,count=1)
 if count!=1: raise RuntimeError('removeMusic reset anchor missing')
 
-# Match any prior laneHeight closure formatting.
-lane_pattern=re.compile(r'let laneHeight:\(Int\)->CGFloat=\{[^\n]*\}')
+lane_pattern=re.compile(r'let\s+laneHeight\s*:\s*\(Int\)\s*->\s*CGFloat\s*=\s*\{.*?\}',re.S)
 lane_repl='let laneHeight:(Int)->CGFloat={lane in model.collapsedTracks.contains(lane) ? 28 : max(32,(laneHeights[lane] ?? 46)*CGFloat(model.trackHeightScale))}'
 s,count=lane_pattern.subn(lane_repl,s,count=1)
 if count!=1: raise RuntimeError('laneHeight closure missing')
 
-# Match the canvas constants regardless of spacing/previous formatting.
-s,count=re.subn(r'let pps=34\.0\*model\.timelineZoom, center=geo\.size\.width/2, rulerH=22\.0, fxH=[^,\n]+, curveH=[^\n]+',
+s,count=re.subn(r'let\s+pps\s*=\s*34\.0\s*\*\s*model\.timelineZoom\s*,\s*center\s*=\s*geo\.size\.width/2\s*,\s*rulerH\s*=\s*22\.0\s*,\s*fxH\s*=\s*[^,\n]+\s*,\s*curveH\s*=\s*[^\n]+',
 '''let pps=34.0*model.timelineZoom, center=geo.size.width/2, rulerH=22.0, fxH=max(30,42.0*CGFloat(model.trackHeightScale)), curveH=max(34,56.0*CGFloat(model.trackHeightScale))''',s,count=1)
 if count!=1: raise RuntimeError('timeline constants missing')
 
-height_pattern=re.compile(r'    private var timelineRequiredHeight:CGFloat \{.*?\n    \}',re.S)
+height_pattern=re.compile(r'    private var timelineRequiredHeight\s*:\s*CGFloat\s*\{.*?\n    \}',re.S)
 height_repl='''    private var timelineRequiredHeight:CGFloat {
         let scale=CGFloat(model.trackHeightScale)
         let base:CGFloat = 22 + max(30,42*scale) + 12
@@ -109,7 +107,7 @@ audio_repl=r'''    private var audioLaneV50: some View {
 s,count=audio_pattern.subn(audio_repl,s,count=1)
 if count!=1: raise RuntimeError('audioLaneV50 block missing')
 
-play_pattern=re.compile(r'    private var playback:some View\{.*?\n\n    private var timeline:',re.S)
+play_pattern=re.compile(r'    private var playback\s*:\s*some View\s*\{.*?\n\n    private var timeline:',re.S)
 play_repl=r'''    private var playback:some View{
         HStack(spacing:8){
             Text("\(precise(model.projectTime)) / \(precise(model.projectDuration))")
