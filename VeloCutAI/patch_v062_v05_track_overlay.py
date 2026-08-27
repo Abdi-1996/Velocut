@@ -4,16 +4,16 @@ p=Path('VeloCutAI/VeloCutAI/VeloCutV4.swift')
 s=p.read_text()
 
 # Add only metadata/state around the existing v0.5 timeline. Do not replace its canvas.
-state='@State private var multiSelectedClips:Set<UUID>=[]'
-if state not in s: raise RuntimeError('v0.5 timeline state missing')
-s=s.replace(state,state+'''\n    @State private var extraTrackCount=0
+state_pat=re.compile(r'(@State private var multiSelectedClips\s*:\s*Set<UUID>\s*=\s*\[\])')
+s,n=state_pat.subn(r'''\1
+    @State private var extraTrackCount=0
     @State private var trackNames:[Int:String]=[0:"V1",1:"V2",2:"V3",3:"Audio"]
     @State private var trackColors:[Int:Color]=[0:.blue,1:.purple,2:.pink,3:.cyan]
     @State private var bypassedTracks:Set<Int>=[]
     @State private var animationCollapsed=true
-    @State private var animationHeight:CGFloat=72''',1)
+    @State private var animationHeight:CGFloat=72''',s,count=1)
+if n!=1: raise RuntimeError('v0.5 timeline state missing')
 
-# Number of rows is dynamic; importing audio creates a normal fourth row in the SAME canvas.
 mark='    private var timeline:some View'
 if mark not in s: raise RuntimeError('timeline property missing')
 helpers='''    private var visibleTrackCount:Int { max(3 + extraTrackCount, model.musicURL == nil ? 3 : 4) }
@@ -46,7 +46,6 @@ helpers='''    private var visibleTrackCount:Int { max(3 + extraTrackCount, mode
 '''
 s=s.replace(mark,helpers+mark,1)
 
-# Keep v0.5 header and put Animation immediately above the existing timeline canvas.
 needle='''        VStack(spacing:4){
             ScrollView(.vertical,showsIndicators:false){GeometryReader{geo in timelineCanvas(geo)}.frame(height:timelineRequiredHeight)}.frame(minHeight:180,maxHeight:360)
             audioLaneV50
@@ -57,11 +56,6 @@ s=s.replace(needle,'''        VStack(spacing:4){
             ScrollView(.vertical,showsIndicators:false){GeometryReader{geo in timelineCanvas(geo)}.frame(height:timelineRequiredHeight)}.frame(minHeight:180,maxHeight:380)
         }''',1)
 
-# Generalize old fixed three lane geometry, preserving exact v0.5 canvas behavior.
-s=s.replace('let laneHeight:(Int)->CGFloat={lane in model.collapsedTracks.contains(lane) ? 28 : max(32,(laneHeights[lane] ?? 46)*CGFloat(model.trackHeightScale))}',
-'''let laneHeight:(Int)->CGFloat={lane in model.collapsedTracks.contains(lane) ? 28 : max(32,(laneHeights[lane] ?? 46)*CGFloat(model.trackHeightScale))}''',1)
-
-# laneTop already loops to lane; no change required. Replace the fixed lane-render block inserted by v0.4.
 lane_pat=re.compile(r'''            ForEach\(0\.\.<3,id:\\\.self\)\{lane in\n                let top=laneTop\(lane\),h=laneHeight\(lane\).*?\n            \}''',re.S)
 lane_repl=r'''            ForEach(0..<visibleTrackCount,id:\.self){lane in
                 let top=laneTop(lane),h=laneHeight(lane)
@@ -119,7 +113,6 @@ lane_repl=r'''            ForEach(0..<visibleTrackCount,id:\.self){lane in
 s,n=lane_pat.subn(lane_repl,s,count=1)
 if n!=1: raise RuntimeError('fixed v0.5 lane block not found')
 
-# Dynamic required height instead of hard-coded 3 lanes.
 height_pat=re.compile(r'''    private var timelineRequiredHeight:CGFloat \{.*?\n    \}''',re.S)
 height_repl='''    private var timelineRequiredHeight:CGFloat {
         let scale=CGFloat(model.trackHeightScale)
