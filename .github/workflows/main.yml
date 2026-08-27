@@ -1,5 +1,5 @@
 name: Build VeloCut AI IPA
-run-name: VeloCut v0.5.6 • ${{ github.sha }}
+run-name: VeloCut v0.5.6 debug • ${{ github.sha }}
 on:
   workflow_dispatch:
   push:
@@ -46,23 +46,18 @@ jobs:
         run: python3 VeloCutAI/patch_v055_track_controls_audio_gallery.py
       - name: Dynamic tracks and contextual audio editor
         run: python3 VeloCutAI/patch_v056_dynamic_tracks_audio_ui.py
-      - name: Timeline scroll and preview controls
-        run: python3 VeloCutAI/patch_v059_timeline_scroll_preview_controls.py
-      - run: brew install xcodegen
-      - working-directory: VeloCutAI
-        run: xcodegen generate
-      - name: Build
-        working-directory: VeloCutAI
-        run: xcodebuild -project VeloCutAI.xcodeproj -scheme VeloCutAI -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' build
-      - name: Package IPA
-        working-directory: VeloCutAI
+      - name: Inspect final timeline gesture
         run: |
-          APP_PATH="build/Build/Products/Release-iphoneos/VeloCutAI.app"
-          test -d "$APP_PATH"
-          rm -rf Payload && mkdir Payload && cp -R "$APP_PATH" Payload/
-          zip -qry VeloCutAI-v0.5.6-unsigned.ipa Payload
-      - uses: actions/upload-artifact@v4
-        with:
-          name: VeloCutAI-v0.5.6-unsigned-ipa
-          path: VeloCutAI/VeloCutAI-v0.5.6-unsigned.ipa
-          if-no-files-found: error
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('VeloCutAI/VeloCutAI/VeloCutV4.swift').read_text()
+          for needle in ['private var timeline:some View','@ViewBuilder private func timelineCanvas','timelineDragStart','DragGesture','MagnificationGesture','simultaneousGesture']:
+              print('\n===== '+needle+' =====')
+              pos=0
+              while True:
+                  i=s.find(needle,pos)
+                  if i<0: break
+                  print(s[max(0,i-600):min(len(s),i+1600)])
+                  pos=i+len(needle)
+          raise SystemExit(17)
+          PY
