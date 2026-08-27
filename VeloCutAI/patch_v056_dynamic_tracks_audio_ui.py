@@ -149,9 +149,9 @@ s,n=re.subn(r'fxH\s*=\s*42(?:\.0)?', 'fxH=0.0', s, count=1)
 if n!=1:
     raise RuntimeError('fxH missing')
 
-s,n=re.subn(r'\s*Rectangle\(\)\.fill\(Color\.purple\.opacity\(\.08\)\).*?Text\("FX"\).*?\n', '\n', s, count=1)
-if n!=1:
-    raise RuntimeError('FX strip visual missing')
+# Hide the old FX strip defensively; earlier UI patches may reformat this line.
+s=s.replace('.frame(height:fxH-3)', '.frame(height:0)', 1)
+s=s.replace('Text("FX")', 'Text("")', 1)
 
 speed_block_pat=re.compile(r'\s*ForEach\(model\.speedFX\)\{fx in.*?(?=\s*ForEach\(0\.\.<3,id:\\\.self\)\{lane in)',re.S)
 s,n=speed_block_pat.subn('\n',s,count=1)
