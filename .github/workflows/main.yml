@@ -38,6 +38,8 @@ jobs:
       - run: python3 VeloCutAI/patch_v049_audio_beats.py
       - name: Restore exact v0.5 foundation
         run: python3 VeloCutAI/patch_v050_pro_workspace.py
+      - name: Relax v0.5 track matcher
+        run: python3 VeloCutAI/patch_v054_relax_v053_matcher.py
       - name: Upgrade only v0.5 tracks
         run: python3 VeloCutAI/patch_v053_universal_tracks.py
       - run: brew install xcodegen
