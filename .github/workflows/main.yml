@@ -49,7 +49,7 @@ jobs:
       - name: Compact timeline UI and vertical scroll
         run: python3 VeloCutAI/patch_v060_compact_timeline_ui.py
       - name: Long press move and magnetic snapping
-        run: python3 VeloCutAI/patch_v061_longpress_snap_selection.py
+        run: python3 VeloCutAI/patch_v061_interaction_snap_fix.py
       - run: brew install xcodegen
       - working-directory: VeloCutAI
         run: xcodegen generate
