@@ -1,5 +1,5 @@
 name: Build VeloCut AI IPA
-run-name: VeloCut v0.5.6 • ${{ github.sha }}
+run-name: VeloCut v0.5.7 • ${{ github.sha }}
 on:
   workflow_dispatch:
   push:
@@ -48,6 +48,8 @@ jobs:
         run: python3 VeloCutAI/patch_v056_dynamic_tracks_audio_ui.py
       - name: Compact timeline UI and vertical scroll
         run: python3 VeloCutAI/patch_v060_compact_timeline_ui.py
+      - name: Long press move and magnetic snapping
+        run: python3 VeloCutAI/patch_v061_longpress_snap_selection.py
       - run: brew install xcodegen
       - working-directory: VeloCutAI
         run: xcodegen generate
@@ -60,9 +62,9 @@ jobs:
           APP_PATH="build/Build/Products/Release-iphoneos/VeloCutAI.app"
           test -d "$APP_PATH"
           rm -rf Payload && mkdir Payload && cp -R "$APP_PATH" Payload/
-          zip -qry VeloCutAI-v0.5.6-unsigned.ipa Payload
+          zip -qry VeloCutAI-v0.5.7-unsigned.ipa Payload
       - uses: actions/upload-artifact@v4
         with:
-          name: VeloCutAI-v0.5.6-unsigned-ipa
-          path: VeloCutAI/VeloCutAI-v0.5.6-unsigned.ipa
+          name: VeloCutAI-v0.5.7-unsigned-ipa
+          path: VeloCutAI/VeloCutAI-v0.5.7-unsigned.ipa
           if-no-files-found: error
