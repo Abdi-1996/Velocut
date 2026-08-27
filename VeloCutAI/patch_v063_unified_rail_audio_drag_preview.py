@@ -13,16 +13,6 @@ if not m:
 if 'audioDragPreview' not in s:
     s=s[:m.end()]+'''\n    @State private var audioDragPreview: [UUID: CGSize] = [:]'''+s[m.end():]
 
-# Make vertical preview use actual resized lane geometry instead of a fixed 52pt step.
-old_helper='''        let laneDelta=Int((raw.height/52).rounded())\n        let target=min(max(0,model.trackCount-1),max(0,item.track+laneDelta))\n        return CGSize(width:CGFloat((desired-item.start)*safePPS),height:CGFloat(target-item.track)*52)\n    }'''
-new_helper='''        let currentCenter=laneTop(item.track)+laneHeight(item.track)/2\n        var target=item.track\n        var bestDistance=CGFloat.greatestFiniteMagnitude\n        let desiredCenter=currentCenter+raw.height\n        for lane in 0..<model.trackCount {\n            let center=laneTop(lane)+laneHeight(lane)/2\n            let distance=abs(center-desiredCenter)\n            if distance<bestDistance { bestDistance=distance; target=lane }\n        }\n        let targetCenter=laneTop(target)+laneHeight(target)/2\n        return CGSize(width:CGFloat((desired-item.start)*safePPS),height:targetCenter-currentCenter)\n    }'''
-# Replace only the SECOND occurrence (audio helper), because video helper has same tail.
-idxs=[m.start() for m in re.finditer(re.escape(old_helper),s)]
-if len(idxs)<2:
-    raise RuntimeError('snapped helper tails missing')
-pos=idxs[1]
-s=s[:pos]+new_helper+s[pos+len(old_helper):]
-
 # Replace v0.5.8 audio gesture with a live offset preview.
 audio_pat=re.compile(r'''(\.overlay\(\n\s*RoundedRectangle\(cornerRadius:6\).*?\.position\(x:x,y:top\+laneH/2\)\n\s*\.onTapGesture\{model\.selectAudioClip\(a\.id\)\})\n\s*\.simultaneousGesture\(\n\s*LongPressGesture\(minimumDuration:0\.30\)\n\s*\.sequenced\(before:DragGesture\(minimumDistance:0\)\)\n\s*\.onChanged\{value in\n\s*if case \.second\(true,_\)=value \{ model\.beginTimelineItemMove\(\) \}\n\s*\}\n\s*\.onEnded\{value in\n\s*defer\{model\.endTimelineItemMove\(\)\}\n\s*if case \.second\(true,let drag\?\)=value \{\n\s*let snapped=snappedAudioTranslation\(a,drag\.translation,pps:pps\)\n\s*if hypot\(snapped\.width,snapped\.height\)>=6 \{ model\.moveAudioClip\(a\.id,translation:snapped,pps:pps\) \}\n\s*\}\n\s*\}\n\s*\)''',re.S)
 
