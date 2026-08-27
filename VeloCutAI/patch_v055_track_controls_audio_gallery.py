@@ -18,10 +18,12 @@ s,n=lane_height_pat.subn('let laneHeight:(Int)->CGFloat={(laneHeights[$0] ?? 46)
 if n!=1:
     raise RuntimeError('v0.5 laneHeight closure missing')
 
-# Universal lane header must use the original laneHeight instead of a hard-coded value.
-if 'let laneH=48.0' not in s:
-    raise RuntimeError('universal lane local height missing')
-s=s.replace('let laneH=48.0','let laneH=laneHeight(lane)',1)
+# Universal lane header and audio object must use original laneHeight, not fixed 46pt.
+fixed='let laneH:CGFloat=46'
+if s.count(fixed) < 2:
+    raise RuntimeError('universal fixed lane heights missing')
+s=s.replace(fixed,'let laneH=laneHeight(lane)',1)
+s=s.replace(fixed,'let laneH=laneHeight(a.track)',1)
 
 # Re-add native LaneHeightHandleV4 that was present in v0.5 before the universal header replacement.
 chevron='Button{if expandedLanes.contains(lane){expandedLanes.remove(lane)}else{expandedLanes.insert(lane)}}label:{Image(systemName:expandedLanes.contains(lane) ? "chevron.up":"chevron.down").font(.system(size:8,weight:.bold)).frame(width:20,height:20).background(.thinMaterial,in:Circle())}.buttonStyle(.plain).position(x:84,y:top+laneH/2)'
