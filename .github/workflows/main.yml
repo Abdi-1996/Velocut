@@ -1,5 +1,5 @@
 name: Build VeloCut AI IPA
-run-name: VeloCut v0.6.2 • ${{ github.sha }}
+run-name: VeloCut v0.5.1 • ${{ github.sha }}
 on:
   workflow_dispatch:
   push:
@@ -36,11 +36,10 @@ jobs:
       - run: python3 VeloCutAI/patch_v047_compile.py
       - run: python3 VeloCutAI/patch_v048_rife_ai.py
       - run: python3 VeloCutAI/patch_v049_audio_beats.py
-      - run: python3 VeloCutAI/patch_v050_pro_workspace.py
-      - run: python3 VeloCutAI/patch_v051_remove_preview_controls.py
-      - run: python3 VeloCutAI/patch_v052_audio_lane_scale_playback.py
-      - name: Layer new controls over v0.5 timeline
-        run: python3 VeloCutAI/patch_v062_v05_track_overlay.py
+      - name: Restore exact v0.5 foundation
+        run: python3 VeloCutAI/patch_v050_pro_workspace.py
+      - name: Layer features over v0.5 without replacing timeline
+        run: python3 VeloCutAI/patch_v051_overlay_on_v050.py
       - run: brew install xcodegen
       - working-directory: VeloCutAI
         run: xcodegen generate
@@ -53,9 +52,9 @@ jobs:
           APP_PATH="build/Build/Products/Release-iphoneos/VeloCutAI.app"
           test -d "$APP_PATH"
           rm -rf Payload && mkdir Payload && cp -R "$APP_PATH" Payload/
-          zip -qry VeloCutAI-v0.6.2-unsigned.ipa Payload
+          zip -qry VeloCutAI-v0.5.1-unsigned.ipa Payload
       - uses: actions/upload-artifact@v4
         with:
-          name: VeloCutAI-v0.6.2-unsigned-ipa
-          path: VeloCutAI/VeloCutAI-v0.6.2-unsigned.ipa
+          name: VeloCutAI-v0.5.1-unsigned-ipa
+          path: VeloCutAI/VeloCutAI-v0.5.1-unsigned.ipa
           if-no-files-found: error
