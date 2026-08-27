@@ -47,7 +47,7 @@ jobs:
       - name: Dynamic tracks and contextual audio editor
         run: python3 VeloCutAI/patch_v056_dynamic_tracks_audio_ui.py
       - name: Timeline scroll and preview controls
-        run: python3 VeloCutAI/patch_v058_timeline_scroll_preview_controls.py
+        run: python3 VeloCutAI/patch_v059_timeline_scroll_preview_controls.py
       - run: brew install xcodegen
       - working-directory: VeloCutAI
         run: xcodegen generate
