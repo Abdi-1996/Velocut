@@ -10,16 +10,12 @@ s=main.read_text()
 # - moving an item does not scrub the timeline
 # - audio/video snap to lanes, edit joints and playhead
 
-# 1) Shared drag gate owned by the view model so the parent timeline gesture can stand down.
 state='@Published var selectedAudioClipID: UUID?'
-if state not in s:
-    raise RuntimeError('selectedAudioClipID state missing')
+if state not in s: raise RuntimeError('selectedAudioClipID state missing')
 s=s.replace(state,state+'\n    @Published var timelineItemDragActive = false',1)
 
-# 2) Selection + snapping helpers. Insert before addTrack(), which is created by v0.5.5.
 anchor='    func addTrack() {'
-if anchor not in s:
-    raise RuntimeError('addTrack helper anchor missing')
+if anchor not in s: raise RuntimeError('addTrack helper anchor missing')
 helpers=r'''    func clearTimelineSelection() {
         selectedAudioClipID=nil
         selectedClipID=nil
@@ -75,7 +71,6 @@ helpers=r'''    func clearTimelineSelection() {
         let points=timelineSnapPoints(excludingClip:id)
         let nearest=points.min(by:{abs($0-proposed)<abs($1-proposed)})
         let snappedTime=(nearest != nil && abs((nearest ?? proposed)-proposed)<=threshold) ? nearest : nil
-
         var targetIndex:Int
         if let t=snappedTime {
             let ordered=layouts.filter{$0.id != id}
@@ -88,8 +83,7 @@ helpers=r'''    func clearTimelineSelection() {
         registerUndo()
         var moved=clips.remove(at:sourceIndex)
         moved.track=targetLane
-        let safe=min(max(0,targetIndex),clips.count)
-        clips.insert(moved,at:safe)
+        clips.insert(moved,at:min(max(0,targetIndex),clips.count))
         selectedAudioClipID=nil;selectedClipID=moved.id
         schedulePreview(immediate:true)
         haptic(snappedTime != nil || targetLane != original.track ? .selection:.light)
@@ -98,13 +92,10 @@ helpers=r'''    func clearTimelineSelection() {
 '''
 s=s.replace(anchor,helpers+anchor,1)
 
-# 3) Empty timeline tap clears contextual audio/video selection.
 bg='ZStack(alignment:.topLeading){RoundedRectangle(cornerRadius:6).fill(Color(uiColor:.secondarySystemGroupedBackground));TimelineRulerV4'
-if bg not in s:
-    raise RuntimeError('timeline background anchor missing')
+if bg not in s: raise RuntimeError('timeline background anchor missing')
 s=s.replace(bg,'ZStack(alignment:.topLeading){RoundedRectangle(cornerRadius:6).fill(Color(uiColor:.secondarySystemGroupedBackground)).contentShape(Rectangle()).onTapGesture{model.clearTimelineSelection()};TimelineRulerV4',1)
 
-# 4) Timeline horizontal scrub must not react while a child item is armed/dragging.
 old='''                .onChanged{v in
                     guard abs(v.translation.width) > abs(v.translation.height) else { return }
                     if timelineDragStart==nil { timelineDragStart = model.projectTime;model.beginScrub() }
@@ -136,11 +127,9 @@ new='''                .onChanged{v in
                     timelineDragStart=nil
                     model.endScrub()
                 }'''
-if old not in s:
-    raise RuntimeError('v0.5.6 timeline scrub body missing')
+if old not in s: raise RuntimeError('v0.5.6 timeline scrub body missing')
 s=s.replace(old,new,1)
 
-# 5) Video card callback: use snapped move and expose drag-state callback.
 old_call='''                    onMenu:{model.selectedClipID=l.id;contextClipID=l.id;clipDialog=true},
                     onMove:{if !multiSelectMode{model.moveClip(l.id,translation:$0,pps:pps)}}
                 )'''
@@ -148,11 +137,9 @@ new_call='''                    onMenu:{model.selectedAudioClipID=nil;model.sele
                     onMove:{if !multiSelectMode{model.moveClipSnapped(l.id,translation:$0,pps:pps)}},
                     onDragStateChanged:{active in model.setTimelineItemDrag(active)}
                 )'''
-if old_call not in s:
-    raise RuntimeError('Filmstrip callback block missing')
+if old_call not in s: raise RuntimeError('Filmstrip callback block missing')
 s=s.replace(old_call,new_call,1)
 
-# 6) Audio: long press arms the item before drag, haptic once, then snapped move on release.
 old_audio='''.onTapGesture{model.selectAudioClip(a.id)}.highPriorityGesture(LongPressGesture(minimumDuration:0.28).sequenced(before:DragGesture(minimumDistance:0)).onEnded{v in if case .second(true,let d?)=v{if hypot(d.translation.width,d.translation.height)<8{model.deleteAudioClip(a.id)}else{model.moveAudioClip(a.id,translation:d.translation,pps:pps)}}})'''
 new_audio='''.onTapGesture{model.selectAudioClip(a.id)}.highPriorityGesture(
                     LongPressGesture(minimumDuration:0.32)
@@ -171,14 +158,10 @@ new_audio='''.onTapGesture{model.selectAudioClip(a.id)}.highPriorityGesture(
                             }
                         }
                 )'''
-if old_audio not in s:
-    raise RuntimeError('inline audio long-press gesture missing')
+if old_audio not in s: raise RuntimeError('inline audio long-press gesture missing')
 s=s.replace(old_audio,new_audio,1)
-
 main.write_text(s)
 
-# 7) Filmstrip view: a simple tap only selects. Movement is armed by long press,
-# and the parent timeline is notified as soon as the long press succeeds.
 enh=Path('VeloCutAI/VeloCutAI/VeloCutV4Enhancements.swift')
 e=enh.read_text()
 field='''    let onMenu: () -> Void
@@ -189,25 +172,13 @@ field_new='''    let onMenu: () -> Void
     let onDragStateChanged: (Bool) -> Void
     @State private var drag: CGSize = .zero
     @State private var dragArmed = false'''
-if field not in e:
-    raise RuntimeError('Filmstrip callback fields missing')
+if field not in e: raise RuntimeError('Filmstrip callback fields missing')
 e=e.replace(field,field_new,1)
 
-gesture='''        .highPriorityGesture(
-            LongPressGesture(minimumDuration: 0.32)
-                .sequenced(before: DragGesture(minimumDistance: 0))
-                .onChanged { value in
-                    if case .second(true, let gesture) = value, let gesture { drag = gesture.translation }
-                }
-                .onEnded { value in
-                    defer { drag = .zero }
-                    if case .second(true, let gesture) = value, let gesture {
-                        hypot(gesture.translation.width, gesture.translation.height) < 10 ? onMenu() : onMove(gesture.translation)
-                    } else {
-                        onMenu()
-                    }
-                }
-        )'''
+start=e.find('struct FilmstripClipCardV45: View')
+if start<0: raise RuntimeError('FilmstripClipCardV45 missing')
+head,tail=e[:start],e[start:]
+gesture_pat=re.compile(r'''        \.highPriorityGesture\(\s*\n            LongPressGesture\(minimumDuration: 0\.32\)\s*\n                \.sequenced\(before: DragGesture\(minimumDistance: 0\)\)\s*\n                \.onChanged \{ value in.*?\n        \)''',re.S)
 gesture_new='''        .highPriorityGesture(
             LongPressGesture(minimumDuration: 0.32)
                 .sequenced(before: DragGesture(minimumDistance: 0))
@@ -231,9 +202,8 @@ gesture_new='''        .highPriorityGesture(
                     }
                 }
         )'''
-if gesture not in e:
-    raise RuntimeError('Filmstrip long-press gesture missing')
-e=e.replace(gesture,gesture_new,1)
-
+tail,n=gesture_pat.subn(gesture_new,tail,count=1)
+if n!=1: raise RuntimeError('Filmstrip structural long-press gesture missing')
+e=head+tail
 enh.write_text(e)
 print('Applied v0.5.7 selection reset, long-press-only movement and magnetic snapping')
