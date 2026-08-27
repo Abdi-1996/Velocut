@@ -3,7 +3,6 @@ import re
 p=Path('VeloCutAI/VeloCutAI/VeloCutV4.swift')
 s=p.read_text()
 
-# Add only metadata/state around the existing v0.5 timeline. Do not replace its canvas.
 state_pat=re.compile(r'(@State private var multiSelectedClips\s*:\s*Set<UUID>\s*=\s*\[\])')
 s,n=state_pat.subn(r'''\1
     @State private var extraTrackCount=0
@@ -46,15 +45,12 @@ helpers='''    private var visibleTrackCount:Int { max(3 + extraTrackCount, mode
 '''
 s=s.replace(mark,helpers+mark,1)
 
-needle='''        VStack(spacing:4){
-            ScrollView(.vertical,showsIndicators:false){GeometryReader{geo in timelineCanvas(geo)}.frame(height:timelineRequiredHeight)}.frame(minHeight:180,maxHeight:360)
-            audioLaneV50
-        }'''
-if needle not in s: raise RuntimeError('v052 timeline stack missing')
-s=s.replace(needle,'''        VStack(spacing:4){
+stack_pat=re.compile(r'''VStack\(spacing:4\)\{\s*ScrollView\(\.vertical,showsIndicators:false\)\{GeometryReader\{geo in timelineCanvas\(geo\)\}\.frame\(height:timelineRequiredHeight\)\}\.frame\(minHeight:180,maxHeight:360\)\s*audioLaneV50\s*\}''',re.S)
+s,n=stack_pat.subn('''VStack(spacing:4){
             animationTimelineV62
             ScrollView(.vertical,showsIndicators:false){GeometryReader{geo in timelineCanvas(geo)}.frame(height:timelineRequiredHeight)}.frame(minHeight:180,maxHeight:380)
-        }''',1)
+        }''',s,count=1)
+if n!=1: raise RuntimeError('v052 timeline stack missing')
 
 lane_pat=re.compile(r'''            ForEach\(0\.\.<3,id:\\\.self\)\{lane in\n                let top=laneTop\(lane\),h=laneHeight\(lane\).*?\n            \}''',re.S)
 lane_repl=r'''            ForEach(0..<visibleTrackCount,id:\.self){lane in
@@ -62,7 +58,6 @@ lane_repl=r'''            ForEach(0..<visibleTrackCount,id:\.self){lane in
                 RoundedRectangle(cornerRadius:8)
                     .fill((trackColors[lane] ?? Color.secondary).opacity(bypassedTracks.contains(lane) ? 0.025:0.065))
                     .frame(height:max(35,h-3)).offset(y:top)
-
                 Menu{
                     Button("Rename"){trackNames[lane]="Track \(lane+1)"}
                     Menu("Color"){
@@ -78,12 +73,10 @@ lane_repl=r'''            ForEach(0..<visibleTrackCount,id:\.self){lane in
                 .simultaneousGesture(LongPressGesture(minimumDuration:0.35).sequenced(before:DragGesture()).onEnded{v in
                     if case .second(true,let d?)=v,abs(d.translation.height)>16 { model.haptic(.selection) }
                 })
-
                 Button{if bypassedTracks.contains(lane){bypassedTracks.remove(lane)}else{bypassedTracks.insert(lane)}}label:{
                     Text("B").font(.system(size:9,weight:.bold)).frame(width:24,height:26)
                         .background(bypassedTracks.contains(lane) ? Color.orange.opacity(0.38):Color.secondary.opacity(0.13),in:RoundedRectangle(cornerRadius:6))
                 }.buttonStyle(.plain).position(x:72,y:top+h/2)
-
                 Menu{
                     Button{model.isFileImporting=true}label:{Label("Video / Photo",systemImage:"film")}
                     Button{model.isAudioImporting=true}label:{Label("Audio",systemImage:"waveform")}
@@ -93,7 +86,6 @@ lane_repl=r'''            ForEach(0..<visibleTrackCount,id:\.self){lane in
                     Button{model.haptic(.selection)}label:{Label("Speed FX",systemImage:"waveform.path.ecg")}
                 }label:{Image(systemName:"plus.circle.fill").font(.system(size:18))}
                 .buttonStyle(.plain).position(x:geo.size.width-17,y:top+h/2)
-
                 if lane == 3, let name=model.musicName, model.musicURL != nil {
                     let duration=max(0.1,model.audioDuration),w=max(54,CGFloat(duration*pps)),x=center+CGFloat((model.audioTimelineStart-model.projectTime)*pps)+w/2
                     HStack(spacing:5){Image(systemName:"waveform").font(.caption2);Text(name).font(.system(size:8,weight:.semibold)).lineLimit(1)}
@@ -103,7 +95,6 @@ lane_repl=r'''            ForEach(0..<visibleTrackCount,id:\.self){lane in
                         .position(x:x,y:top+h/2)
                         .gesture(DragGesture(minimumDistance:2).onChanged{v in model.audioTimelineStart=max(0,model.audioTimelineStart+Double(v.translation.width)/pps)}.onEnded{_ in model.schedulePreview()})
                 }
-
                 LaneHeightHandleV4(height:h){laneHeights[lane]=$0}.position(x:geo.size.width-42,y:top+h-7)
                 if expandedLanes.contains(lane){
                     RoundedRectangle(cornerRadius:7).fill(Color.accentColor.opacity(0.035)).frame(height:curveH-2).offset(y:top+h)
