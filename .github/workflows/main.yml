@@ -58,6 +58,8 @@ jobs:
         run: python3 VeloCutAI/patch_v064_grouped_media_tracks.py
       - name: Completely fresh editor UI
         run: python3 VeloCutAI/patch_v065_fresh_editor_ui.py
+      - name: Fresh UI compile fixes
+        run: python3 VeloCutAI/patch_v066_fresh_ui_compile_fix.py
       - run: brew install xcodegen
       - working-directory: VeloCutAI
         run: xcodegen generate
