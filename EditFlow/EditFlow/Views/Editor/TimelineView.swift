@@ -39,6 +39,7 @@ struct TimelineView: View {
                                 }
                                 .padding(.vertical, 8)
                             }
+                            .gesture(timelinePanGesture)
 
                             fixedPlayhead(x: playheadX)
                                 .allowsHitTesting(false)
