@@ -22,11 +22,13 @@ final class EditorViewModel: ObservableObject {
     private let store: ProjectStore
     private let importer = MediaImportService()
     private let exporter = VideoExportService()
+    private var previewClipID: UUID?
 
     init(project: EditProject, store: ProjectStore) {
         self.project = project
         self.store = store
         selectedClipID = project.clips.first?.id
+        playhead = min(project.clips.first?.timelineStart ?? 0, project.duration)
         refreshPlayer()
     }
 
@@ -79,8 +81,41 @@ final class EditorViewModel: ObservableObject {
 
     func select(_ clip: MediaClip) {
         selectedClipID = clip.id
-        playhead = clip.timelineStart
         refreshPlayer()
+    }
+
+    func scrubTimeline(to timelineTime: Double) {
+        let clamped = min(max(0, timelineTime), max(0, project.duration))
+        playhead = clamped
+
+        let activeVideo = project.clips
+            .filter {
+                $0.kind == .video &&
+                clamped >= $0.timelineStart &&
+                clamped <= $0.timelineEnd
+            }
+            .sorted { $0.layer > $1.layer }
+            .first
+
+        guard let clip = activeVideo else {
+            player.pause()
+            return
+        }
+
+        let url = mediaURL(for: clip)
+        if previewClipID != clip.id {
+            player.replaceCurrentItem(with: AVPlayerItem(url: url))
+            previewClipID = clip.id
+        }
+
+        let localTimeline = min(max(0, clamped - clip.timelineStart), clip.playbackDuration)
+        let fraction = clip.playbackDuration > 0 ? localTimeline / clip.playbackDuration : 0
+        let sourceTime = clip.trimStart + clip.trimmedDuration * fraction
+        player.seek(
+            to: CMTime(seconds: sourceTime, preferredTimescale: 600),
+            toleranceBefore: .zero,
+            toleranceAfter: .zero
+        )
     }
 
     func splitSelected(at timelineTime: Double) {
@@ -135,6 +170,17 @@ final class EditorViewModel: ObservableObject {
         }
         compactPrimaryTrack()
         commit()
+    }
+
+    func previewNonRippleTrim(_ updatedClip: MediaClip) {
+        guard updatedClip.id == selectedClipID,
+              let index = project.clips.firstIndex(where: { $0.id == updatedClip.id }) else { return }
+        project.clips[index] = updatedClip
+    }
+
+    func finishNonRippleTrim() {
+        commit()
+        scrubTimeline(to: playhead)
     }
 
     func applySpeedPreset(_ preset: SpeedPreset) {
@@ -208,11 +254,18 @@ final class EditorViewModel: ObservableObject {
     func refreshPlayer() {
         guard let clip = selectedClip, clip.kind == .video else {
             player.replaceCurrentItem(with: nil)
+            previewClipID = nil
             return
         }
-        let url = store.projectDirectory(project.id).appendingPathComponent(clip.relativePath)
+        let url = mediaURL(for: clip)
         player.replaceCurrentItem(with: AVPlayerItem(url: url))
-        player.seek(to: CMTime(seconds: clip.trimStart, preferredTimescale: 600))
+        previewClipID = clip.id
+
+        let timelineTime = min(max(playhead, clip.timelineStart), clip.timelineEnd)
+        let localTimeline = max(0, timelineTime - clip.timelineStart)
+        let fraction = clip.playbackDuration > 0 ? localTimeline / clip.playbackDuration : 0
+        let sourceTime = clip.trimStart + clip.trimmedDuration * fraction
+        player.seek(to: CMTime(seconds: sourceTime, preferredTimescale: 600))
     }
 
     private func mutateSelected(_ change: (inout MediaClip) -> Void) {
