@@ -54,7 +54,7 @@ final class EditorViewModel: ObservableObject {
         }
     }
 
-    func importFromGallery(_ items: [PhotosPickerItem]) async {
+    func importFromGallery(_ items: [PhotosPickerItem], visualLayer: Int = 0) async {
         guard !items.isEmpty else { return }
         isImporting = true
         errorMessage = nil
@@ -68,7 +68,7 @@ final class EditorViewModel: ObservableObject {
                 urls.append(media.url)
             }
             let imported = try await importer.importFiles(urls, into: store.mediaDirectory(project.id))
-            appendImportedMedia(imported)
+            appendImportedMedia(imported, targetVisualLayer: visualLayer)
         } catch {
             errorMessage = "Не удалось импортировать из галереи: \(error.localizedDescription)"
         }
@@ -221,12 +221,13 @@ final class EditorViewModel: ObservableObject {
         change(&project.clips[index])
     }
 
-    private func appendImportedMedia(_ items: [ImportedMedia]) {
-        var videoCursor = project.clips.filter { $0.layer == 0 && $0.kind != .audio }.map(\.timelineEnd).max() ?? 0
+    private func appendImportedMedia(_ items: [ImportedMedia], targetVisualLayer: Int? = nil) {
+        let visualLayer = targetVisualLayer ?? 0
+        var videoCursor = project.clips.filter { $0.layer == visualLayer && $0.kind != .audio }.map(\.timelineEnd).max() ?? 0
         var audioCursor = project.clips.filter { $0.kind == .audio }.map(\.timelineEnd).max() ?? 0
         for item in items {
             let start = item.kind == .audio ? audioCursor : videoCursor
-            let layer = item.kind == .audio ? 2 : 0
+            let layer = item.kind == .audio ? 2 : visualLayer
             let clip = MediaClip(fileName: item.fileName, relativePath: item.relativePath, kind: item.kind, sourceDuration: item.duration, timelineStart: start, trimEnd: item.duration, layer: layer)
             project.clips.append(clip)
             if item.kind == .audio { audioCursor += clip.playbackDuration } else { videoCursor += clip.playbackDuration }

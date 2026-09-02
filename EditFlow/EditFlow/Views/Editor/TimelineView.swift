@@ -2,7 +2,7 @@ import SwiftUI
 
 struct TimelineView: View {
     @ObservedObject var viewModel: EditorViewModel
-    @State private var zoom: CGFloat = 54
+    @State private var zoom: CGFloat = 62
 
     private let labelWidth: CGFloat = 42
 
@@ -30,7 +30,7 @@ struct TimelineView: View {
                 .scrollIndicators(.visible)
             }
         }
-        .background(Color(uiColor: .secondarySystemBackground).opacity(0.58))
+        .background(Color(red: 0.055, green: 0.055, blue: 0.063))
     }
 
     private var trackNumbers: [Int] {
@@ -40,23 +40,18 @@ struct TimelineView: View {
 
     private var timelineHeader: some View {
         HStack(spacing: 10) {
-            Button {
-                viewModel.playhead = max(0, viewModel.playhead - 1 / Double(viewModel.project.frameRate))
-            } label: { Image(systemName: "backward.frame") }
-                .accessibilityLabel("Предыдущий кадр")
-            Text("\(viewModel.playhead.formattedDuration) / \(viewModel.project.duration.formattedDuration)")
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
+            Image(systemName: "timeline.selection")
+                .foregroundStyle(.white.opacity(0.65))
+            Text("Таймлайн")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.82))
             Spacer()
-            Image(systemName: "minus.magnifyingglass").foregroundStyle(.secondary)
+            Image(systemName: "minus.magnifyingglass").foregroundStyle(.white.opacity(0.45))
             Slider(value: $zoom, in: 32...130)
-                .frame(maxWidth: 130)
+                .frame(maxWidth: 105)
+                .tint(.white)
                 .accessibilityLabel("Масштаб таймлайна")
-            Image(systemName: "plus.magnifyingglass").foregroundStyle(.secondary)
-            Button {
-                viewModel.playhead = min(viewModel.project.duration, viewModel.playhead + 1 / Double(viewModel.project.frameRate))
-            } label: { Image(systemName: "forward.frame") }
-                .accessibilityLabel("Следующий кадр")
+            Image(systemName: "plus.magnifyingglass").foregroundStyle(.white.opacity(0.45))
         }
         .buttonStyle(.borderless)
         .padding(.horizontal, 10)
@@ -84,7 +79,7 @@ struct TimelineView: View {
     private func track(_ layer: Int) -> some View {
         ZStack(alignment: .leading) {
             RoundedRectangle(cornerRadius: 9)
-                .fill(.white.opacity(0.035))
+                .fill(.white.opacity(0.025))
                 .frame(height: 46)
             Text(layerName(layer))
                 .font(.caption2.weight(.semibold))
@@ -104,11 +99,11 @@ struct TimelineView: View {
 
     private var playhead: some View {
         Rectangle()
-            .fill(Color.red)
+            .fill(Color.white)
             .frame(width: 2, height: CGFloat(trackNumbers.count) * 53)
             .overlay(alignment: .top) {
                 RoundedRectangle(cornerRadius: 3)
-                    .fill(Color.red)
+                    .fill(Color.white)
                     .frame(width: 12, height: 12)
                     .offset(y: -5)
             }
@@ -142,18 +137,18 @@ private struct ClipBlock: View {
         .font(.caption2)
         .padding(.horizontal, 8)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .background(clipColor, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .background(clipColor, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .stroke(selected ? .white : .clear, lineWidth: 2)
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .stroke(selected ? Color.white : Color.white.opacity(0.08), lineWidth: selected ? 2 : 1)
         }
     }
 
     private var clipColor: Color {
         switch clip.kind {
-        case .video: .indigo.opacity(0.78)
-        case .image: .cyan.opacity(0.72)
-        case .audio: .green.opacity(0.68)
+        case .video: Color(red: 0.31, green: 0.34, blue: 0.42)
+        case .image: Color(red: 0.23, green: 0.39, blue: 0.42)
+        case .audio: Color(red: 0.20, green: 0.42, blue: 0.31)
         }
     }
 }

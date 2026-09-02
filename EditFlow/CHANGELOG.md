@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.2.0
+
+### Changed
+
+- Rebuilt the iPhone editor as a compact CapCut-inspired workspace.
+- Added a dedicated playback-control row between the canvas and timeline.
+- Added bottom navigation for Edit, Audio, Text, Overlay, Effects, Transitions, and Color.
+- Added contextual actions that change with the selected editing category.
+- Restyled the multi-track timeline, clips, playhead, zoom control, and canvas.
+- Overlay imports now go to their own visual layer.
+- Export is now a prominent top action.
+
 ## 1.1.1
 
 ### Fixed
