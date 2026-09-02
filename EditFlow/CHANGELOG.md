@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.1
+
+### Fixed
+
+- Added direct multi-selection import from the iPhone and iPad photo library.
+- Gallery videos and photos are copied into the project before the picker releases access.
+- Added a visible import progress state and clearer gallery import errors.
+- The add-media menu now separates Gallery from Files and audio.
+
 ## 1.1.0
 
 ### Added

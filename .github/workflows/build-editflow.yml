@@ -76,9 +76,9 @@ jobs:
           mkdir -p "$RUNNER_TEMP/Payload"
           cp -R "$APP_PATH" "$RUNNER_TEMP/Payload/"
           cd "$RUNNER_TEMP"
-          zip -qry EditFlow-1.1.0-unsigned.ipa Payload
+          zip -qry EditFlow-1.1.1-unsigned.ipa Payload
       - uses: actions/upload-artifact@v4
         with:
-          name: EditFlow-1.1.0-unsigned-IPA
-          path: ${{ runner.temp }}/EditFlow-1.1.0-unsigned.ipa
+          name: EditFlow-1.1.1-unsigned-IPA
+          path: ${{ runner.temp }}/EditFlow-1.1.1-unsigned.ipa
           if-no-files-found: error

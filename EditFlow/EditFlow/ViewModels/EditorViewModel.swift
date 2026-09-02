@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import Photos
+import PhotosUI
 import SwiftUI
 
 @MainActor
@@ -45,23 +46,35 @@ final class EditorViewModel: ObservableObject {
         Task {
             do {
                 let items = try await importer.importFiles(urls, into: mediaDirectory)
-                var videoCursor = project.clips.filter { $0.layer == 0 && $0.kind != .audio }.map(\.timelineEnd).max() ?? 0
-                var audioCursor = project.clips.filter { $0.kind == .audio }.map(\.timelineEnd).max() ?? 0
-                for item in items {
-                    let start = item.kind == .audio ? audioCursor : videoCursor
-                    let layer = item.kind == .audio ? 2 : 0
-                    let clip = MediaClip(fileName: item.fileName, relativePath: item.relativePath, kind: item.kind, sourceDuration: item.duration, timelineStart: start, trimEnd: item.duration, layer: layer)
-                    project.clips.append(clip)
-                    if item.kind == .audio { audioCursor += clip.playbackDuration } else { videoCursor += clip.playbackDuration }
-                    selectedClipID = clip.id
-                }
-                commit()
-                refreshPlayer()
+                appendImportedMedia(items)
             } catch {
                 errorMessage = error.localizedDescription
             }
             isImporting = false
         }
+    }
+
+    func importFromGallery(_ items: [PhotosPickerItem]) async {
+        guard !items.isEmpty else { return }
+        isImporting = true
+        errorMessage = nil
+        var urls: [URL] = []
+
+        do {
+            for item in items {
+                guard let media = try await item.loadTransferable(type: GalleryMediaTransfer.self) else {
+                    throw MediaImportError.inaccessibleFile
+                }
+                urls.append(media.url)
+            }
+            let imported = try await importer.importFiles(urls, into: store.mediaDirectory(project.id))
+            appendImportedMedia(imported)
+        } catch {
+            errorMessage = "Не удалось импортировать из галереи: \(error.localizedDescription)"
+        }
+
+        for url in urls { try? FileManager.default.removeItem(at: url) }
+        isImporting = false
     }
 
     func select(_ clip: MediaClip) {
@@ -206,6 +219,21 @@ final class EditorViewModel: ObservableObject {
         guard let id = selectedClipID,
               let index = project.clips.firstIndex(where: { $0.id == id }) else { return }
         change(&project.clips[index])
+    }
+
+    private func appendImportedMedia(_ items: [ImportedMedia]) {
+        var videoCursor = project.clips.filter { $0.layer == 0 && $0.kind != .audio }.map(\.timelineEnd).max() ?? 0
+        var audioCursor = project.clips.filter { $0.kind == .audio }.map(\.timelineEnd).max() ?? 0
+        for item in items {
+            let start = item.kind == .audio ? audioCursor : videoCursor
+            let layer = item.kind == .audio ? 2 : 0
+            let clip = MediaClip(fileName: item.fileName, relativePath: item.relativePath, kind: item.kind, sourceDuration: item.duration, timelineStart: start, trimEnd: item.duration, layer: layer)
+            project.clips.append(clip)
+            if item.kind == .audio { audioCursor += clip.playbackDuration } else { videoCursor += clip.playbackDuration }
+            selectedClipID = clip.id
+        }
+        commit()
+        refreshPlayer()
     }
 
     private func compactPrimaryTrack() {

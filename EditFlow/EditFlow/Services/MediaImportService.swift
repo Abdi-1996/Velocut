@@ -1,6 +1,30 @@
 import AVFoundation
+import CoreTransferable
 import Foundation
 import UniformTypeIdentifiers
+
+struct GalleryMediaTransfer: Transferable {
+    let url: URL
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(importedContentType: .movie) { received in
+            try copyFromPhotoLibrary(received.file)
+        }
+        FileRepresentation(importedContentType: .image) { received in
+            try copyFromPhotoLibrary(received.file)
+        }
+    }
+
+    private static func copyFromPhotoLibrary(_ source: URL) throws -> GalleryMediaTransfer {
+        let inbox = FileManager.default.temporaryDirectory
+            .appendingPathComponent("EditFlowGalleryInbox", isDirectory: true)
+        try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+        let ext = source.pathExtension.isEmpty ? "media" : source.pathExtension
+        let target = inbox.appendingPathComponent("\(UUID().uuidString).\(ext)")
+        try FileManager.default.copyItem(at: source, to: target)
+        return GalleryMediaTransfer(url: target)
+    }
+}
 
 struct ImportedMedia {
     let fileName: String
@@ -60,4 +84,3 @@ actor MediaImportService {
         return ImportedMedia(fileName: source.lastPathComponent, relativePath: "Media/\(safeName)", kind: kind, duration: max(0.05, duration))
     }
 }
-

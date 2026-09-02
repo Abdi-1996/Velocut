@@ -1,3 +1,4 @@
+import PhotosUI
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
@@ -6,6 +7,8 @@ struct EditorView: View {
     @StateObject var viewModel: EditorViewModel
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var showingImporter = false
+    @State private var showingGallery = false
+    @State private var gallerySelection: [PhotosPickerItem] = []
 
     private var importTypes: [UTType] { [.movie, .image, .audio] }
 
@@ -24,6 +27,21 @@ struct EditorView: View {
             switch result {
             case .success(let urls): viewModel.importFiles(urls)
             case .failure(let error): viewModel.errorMessage = error.localizedDescription
+            }
+        }
+        .photosPicker(
+            isPresented: $showingGallery,
+            selection: $gallerySelection,
+            maxSelectionCount: 50,
+            selectionBehavior: .ordered,
+            matching: .any(of: [.videos, .images]),
+            preferredItemEncoding: .current
+        )
+        .onChange(of: gallerySelection) { _, items in
+            guard !items.isEmpty else { return }
+            Task {
+                await viewModel.importFromGallery(items)
+                gallerySelection.removeAll()
             }
         }
         .sheet(isPresented: $viewModel.showingSpeedRamp) {
@@ -47,13 +65,33 @@ struct EditorView: View {
             Text(viewModel.errorMessage ?? "")
         }
         .background(Color.black.ignoresSafeArea())
+        .overlay {
+            if viewModel.isImporting {
+                VStack(spacing: 12) {
+                    ProgressView()
+                    Text("Импорт из галереи…")
+                        .font(.subheadline.weight(.medium))
+                }
+                .padding(22)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            }
+        }
     }
 
     @ToolbarContentBuilder
     private var editorToolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarTrailing) {
-            Button {
-                showingImporter = true
+            Menu {
+                Button {
+                    showingGallery = true
+                } label: {
+                    Label("Фото и видео из галереи", systemImage: "photo.on.rectangle.angled")
+                }
+                Button {
+                    showingImporter = true
+                } label: {
+                    Label("Файл или аудио", systemImage: "folder")
+                }
             } label: {
                 Image(systemName: "plus")
             }
@@ -91,13 +129,13 @@ struct EditorView: View {
         VStack(spacing: 0) {
             preview.frame(minHeight: 240, idealHeight: 300)
             TimelineView(viewModel: viewModel)
-            ClipActionBar(viewModel: viewModel, importAction: { showingImporter = true })
+            ClipActionBar(viewModel: viewModel, importAction: { showingGallery = true })
         }
     }
 
     private var iPadLayout: some View {
         HStack(spacing: 0) {
-            MediaSidebar(viewModel: viewModel, importAction: { showingImporter = true })
+            MediaSidebar(viewModel: viewModel, importAction: { showingGallery = true })
                 .frame(width: 220)
             VStack(spacing: 0) {
                 preview

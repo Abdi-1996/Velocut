@@ -1,6 +1,6 @@
-# EditFlow 1.1.0
+# EditFlow 1.1.1
 
-EditFlow is a native iPhone and iPad editor for short vertical edits. Version 1.1.0 adds real per-clip effects, still-photo rendering, transitions, and start/end transform keyframes to the existing timeline, Speed Ramp, persistence, playback, and AVFoundation export.
+EditFlow is a native iPhone and iPad editor for short vertical edits. Version 1.1.1 adds direct multi-selection import from the system photo library, alongside real per-clip effects, still-photo rendering, transitions, keyframes, Speed Ramp, persistence, playback, and AVFoundation export.
 
 ## Requirements
 
@@ -25,7 +25,7 @@ xcodegen generate
 
 ## IPA in GitHub Actions
 
-The workflow builds and tests the simulator version, compiles a real device app, and uploads it as the `EditFlow-1.1.0-unsigned-IPA` artifact. The resulting IPA must be signed before installation on an ordinary iPhone. It is not a renamed source ZIP.
+The workflow builds and tests the simulator version, compiles a real device app, and uploads it as the `EditFlow-1.1.1-unsigned-IPA` artifact. The resulting IPA must be signed before installation on an ordinary iPhone. It is not a renamed source ZIP.
 
 ## Local data
 
