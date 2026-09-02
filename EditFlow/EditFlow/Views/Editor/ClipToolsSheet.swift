@@ -61,9 +61,9 @@ struct ClipToolsSheet: View {
 
     private var transitionForm: some View {
         Form {
-            Section("После выбранного клипа") {
+            Section {
                 Picker("Тип", selection: Binding(
-                    get: { viewModel.selectedClip?.resolvedTransition.style ?? .none },
+                    get: { viewModel.selectedClip?.resolvedTransition.style ?? TransitionStyle.none },
                     set: { viewModel.updateTransition(style: $0) }
                 )) {
                     ForEach(TransitionStyle.allCases) { style in Text(style.rawValue).tag(style) }
@@ -72,6 +72,8 @@ struct ClipToolsSheet: View {
                     get: { viewModel.selectedClip?.resolvedTransition.duration ?? 0.35 },
                     set: { viewModel.updateTransition(duration: $0) }
                 ), range: 0.1...1.5, suffix: "с")
+            } header: {
+                Text("После выбранного клипа")
             } footer: {
                 Text("Растворение накладывает соседние клипы друг на друга. Затемнение сохраняет их последовательность.")
             }
@@ -140,4 +142,3 @@ private struct EffectSlider: View {
         }
     }
 }
-
