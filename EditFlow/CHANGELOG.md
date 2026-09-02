@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.3.0
+
+### Changed
+
+- Rebuilt the timeline into a DaVinci Resolve Cut-inspired touch workflow.
+- The red playhead is fixed in the center; dragging the timeline moves media beneath it.
+- Removed the upper overview timeline completely.
+- Selecting a clip now shows dedicated trim handles on both edges.
+- Left and right trim handles use non-ripple trimming so the timeline viewport does not jump.
+- Selecting a clip no longer moves the playhead.
+- Added frame snapping plus optional magnetic snapping to clip boundaries.
+- Timeline ruler and tracks now stay synchronized with the fixed playhead.
+- Scrubbing seeks the active video under the playhead for responsive preview.
+
 ## 1.2.0
 
 ### Changed
