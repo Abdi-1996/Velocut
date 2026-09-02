@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="background" x1="80" y1="80" x2="944" y2="944" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0A84FF"/>
+      <stop offset="0.52" stop-color="#6A5CFF"/>
+      <stop offset="1" stop-color="#BF5AF2"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="180" y1="160" x2="730" y2="850" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity="0.92"/>
+      <stop offset="1" stop-color="#D9EEFF" stop-opacity="0.72"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="224" fill="#050609"/>
+  <circle cx="240" cy="214" r="310" fill="#0A84FF" fill-opacity="0.28"/>
+  <circle cx="830" cy="846" r="390" fill="#BF5AF2" fill-opacity="0.24"/>
+  <rect x="116" y="116" width="792" height="792" rx="192" fill="url(#background)"/>
+  <path d="M329 281C329 248 356 221 389 221H694C727 221 754 248 754 281V348H452V451H695V578H452V682H764V743C764 776 737 803 704 803H389C356 803 329 776 329 743V281Z" fill="url(#shine)"/>
+  <path d="M720 432L864 512L720 592V432Z" fill="#FFFFFF" fill-opacity="0.92"/>
+</svg>
+
