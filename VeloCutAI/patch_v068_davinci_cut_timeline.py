@@ -240,9 +240,9 @@ block(
     let onMove:(CGSize)->Void
     let onTrimLeft:(CGFloat)->Void
     let onTrimRight:(CGFloat)->Void
-    @State private var drag:CGSize=.zero
-    @State private var leftTrimPreview:CGFloat=0
-    @State private var rightTrimPreview:CGFloat=0
+    @State private var drag:CGSize = .zero
+    @State private var leftTrimPreview:CGFloat = 0
+    @State private var rightTrimPreview:CGFloat = 0
 
     var body:some View{
         ZStack{
@@ -264,7 +264,7 @@ block(
                 LongPressGesture(minimumDuration:0.30).sequenced(before:DragGesture(minimumDistance:0))
                     .onChanged{v in if case .second(true,let d?)=v{drag=d.translation}}
                     .onEnded{v in
-                        defer{drag=.zero}
+                        defer{drag = .zero}
                         if case .second(true,let d?)=v{
                             if hypot(d.translation.width,d.translation.height)<8{onMenu()}else{onMove(d.translation)}
                         }else{onMenu()}
@@ -281,7 +281,7 @@ block(
                         .highPriorityGesture(
                             DragGesture(minimumDistance:0)
                                 .onChanged{v in leftTrimPreview=min(max(v.translation.width,-width+32),width-32)}
-                                .onEnded{v in onTrimLeft(v.translation.width);leftTrimPreview=0}
+                                .onEnded{v in onTrimLeft(v.translation.width);leftTrimPreview = 0}
                         )
                     Spacer(minLength:0)
                     RoundedRectangle(cornerRadius:5)
@@ -292,7 +292,7 @@ block(
                         .highPriorityGesture(
                             DragGesture(minimumDistance:0)
                                 .onChanged{v in rightTrimPreview=min(max(v.translation.width,-width+32),width-32)}
-                                .onEnded{v in onTrimRight(v.translation.width);rightTrimPreview=0}
+                                .onEnded{v in onTrimRight(v.translation.width);rightTrimPreview = 0}
                         )
                 }
                 .frame(width:width,height:46)
