@@ -6,7 +6,7 @@ on:
     branches: [main, editflow]
     paths:
       - "EditFlow/**"
-      - ".github/workflows/build.yml"
+      - ".github/workflows/build-editflow.yml"
 
 permissions:
   contents: read
@@ -82,68 +82,3 @@ jobs:
           name: EditFlow-1.0.0-unsigned-IPA
           path: ${{ runner.temp }}/EditFlow-1.0.0-unsigned.ipa
           if-no-files-found: error
-
-  signed-ipa:
-    if: ${{ secrets.IOS_CERTIFICATE_BASE64 != '' && secrets.IOS_PROVISION_PROFILE_BASE64 != '' && secrets.IOS_CERTIFICATE_PASSWORD != '' }}
-    runs-on: macos-15
-    steps:
-      - uses: actions/checkout@v4
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
-      - name: Generate project
-        run: |
-          brew install xcodegen
-          cd EditFlow
-          xcodegen generate
-      - name: Install signing files
-        env:
-          CERTIFICATE_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
-          PROVISION_PROFILE_BASE64: ${{ secrets.IOS_PROVISION_PROFILE_BASE64 }}
-          CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
-        run: |
-          KEYCHAIN_PATH=$RUNNER_TEMP/editflow-signing.keychain-db
-          CERTIFICATE_PATH=$RUNNER_TEMP/certificate.p12
-          PROFILE_PATH=$RUNNER_TEMP/profile.mobileprovision
-          echo -n "$CERTIFICATE_BASE64" | base64 --decode -o "$CERTIFICATE_PATH"
-          echo -n "$PROVISION_PROFILE_BASE64" | base64 --decode -o "$PROFILE_PATH"
-          security create-keychain -p actions "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p actions "$KEYCHAIN_PATH"
-          security import "$CERTIFICATE_PATH" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
-          security list-keychain -d user -s "$KEYCHAIN_PATH"
-          security set-key-partition-list -S apple-tool:,apple: -k actions "$KEYCHAIN_PATH"
-          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
-          cp "$PROFILE_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/EditFlow.mobileprovision"
-      - name: Archive
-        run: |
-          cd EditFlow
-          xcodebuild \
-            -project EditFlow.xcodeproj \
-            -scheme EditFlow \
-            -configuration Release \
-            -archivePath "$RUNNER_TEMP/EditFlow.xcarchive" \
-            -destination 'generic/platform=iOS' \
-            archive
-      - name: Create export options
-        env:
-          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0"><dict>
-            <key>method</key><string>development</string>
-            <key>signingStyle</key><string>automatic</string>
-            <key>teamID</key><string>$TEAM_ID</string>
-          </dict></plist>
-          PLIST
-      - name: Export signed IPA
-        run: |
-          xcodebuild -exportArchive \
-            -archivePath "$RUNNER_TEMP/EditFlow.xcarchive" \
-            -exportPath "$RUNNER_TEMP/EditFlowIPA" \
-            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: EditFlow-1.0.0-IPA
-          path: ${{ runner.temp }}/EditFlowIPA/*.ipa
