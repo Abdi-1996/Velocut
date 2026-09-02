@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 struct EditorView: View {
@@ -27,6 +28,10 @@ struct EditorView: View {
         }
         .sheet(isPresented: $viewModel.showingSpeedRamp) {
             SpeedRampSheet(viewModel: viewModel)
+                .presentationDetents([.large])
+        }
+        .sheet(isPresented: $viewModel.showingClipTools) {
+            ClipToolsSheet(viewModel: viewModel)
                 .presentationDetents([.large])
         }
         .sheet(isPresented: $viewModel.showingExport) {
@@ -66,7 +71,13 @@ struct EditorView: View {
 
     private var preview: some View {
         Group {
-            if viewModel.player.currentItem == nil {
+            if let clip = viewModel.selectedClip, clip.kind == .image,
+               let image = UIImage(contentsOfFile: viewModel.mediaURL(for: clip).path) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .padding(8)
+            } else if viewModel.player.currentItem == nil {
                 EmptyPreview()
             } else {
                 PlayerContainer(player: viewModel.player)
@@ -171,6 +182,7 @@ private struct ClipInspector: View {
                 }
                 Section {
                     Button("Открыть Speed Ramp") { viewModel.showingSpeedRamp = true }
+                    Button("Эффекты, переход и keyframes") { viewModel.showingClipTools = true }
                     Button("Удалить клип", role: .destructive) { viewModel.deleteSelected() }
                 }
             } else {
@@ -191,4 +203,3 @@ extension MediaKind {
         }
     }
 }
-

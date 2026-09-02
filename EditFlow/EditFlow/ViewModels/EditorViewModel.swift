@@ -15,6 +15,7 @@ final class EditorViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var exportedURL: URL?
     @Published var showingSpeedRamp = false
+    @Published var showingClipTools = false
     @Published var showingExport = false
 
     private let store: ProjectStore
@@ -31,6 +32,10 @@ final class EditorViewModel: ObservableObject {
     var selectedClip: MediaClip? {
         guard let selectedClipID else { return nil }
         return project.clips.first { $0.id == selectedClipID }
+    }
+
+    func mediaURL(for clip: MediaClip) -> URL {
+        store.projectDirectory(project.id).appendingPathComponent(clip.relativePath)
     }
 
     func importFiles(_ urls: [URL]) {
@@ -135,6 +140,42 @@ final class EditorViewModel: ObservableObject {
         commit()
     }
 
+    func updateEffects(_ effects: EffectSettings) {
+        mutateSelected { $0.effects = effects }
+        commit()
+    }
+
+    func resetEffects() {
+        updateEffects(EffectSettings())
+    }
+
+    func updateTransition(style: TransitionStyle? = nil, duration: Double? = nil) {
+        mutateSelected { clip in
+            var transition = clip.resolvedTransition
+            if let style { transition.style = style }
+            if let duration { transition.duration = min(max(0.1, duration), 1.5) }
+            clip.transition = transition
+        }
+        compactPrimaryTrack()
+        commit()
+    }
+
+    func updateKeyframe(_ keyframe: ClipKeyframe) {
+        mutateSelected { clip in
+            var keyframes = clip.resolvedKeyframes
+            guard let index = keyframes.firstIndex(where: { $0.id == keyframe.id }) else { return }
+            keyframes[index] = keyframe
+            keyframes.sort { $0.position < $1.position }
+            clip.keyframes = keyframes
+        }
+        commit()
+    }
+
+    func resetKeyframes() {
+        mutateSelected { $0.keyframes = ClipKeyframe.identity }
+        commit()
+    }
+
     func export(quality: ExportQuality, saveToPhotos: Bool) {
         isExporting = true
         errorMessage = nil
@@ -170,10 +211,15 @@ final class EditorViewModel: ObservableObject {
     private func compactPrimaryTrack() {
         var cursor = 0.0
         let orderedIDs = project.clips.filter { $0.layer == 0 }.sorted { $0.timelineStart < $1.timelineStart }.map(\.id)
+        var previous: MediaClip?
         for id in orderedIDs {
             guard let index = project.clips.firstIndex(where: { $0.id == id }) else { continue }
+            if let previous, previous.resolvedTransition.style == .crossDissolve {
+                cursor -= min(previous.resolvedTransition.duration, previous.playbackDuration * 0.45, project.clips[index].playbackDuration * 0.45)
+            }
             project.clips[index].timelineStart = cursor
             cursor += project.clips[index].playbackDuration
+            previous = project.clips[index]
         }
     }
 
@@ -191,4 +237,3 @@ final class EditorViewModel: ObservableObject {
         }
     }
 }
-

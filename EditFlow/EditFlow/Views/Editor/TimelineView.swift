@@ -170,6 +170,8 @@ struct ClipActionBar: View {
                     .disabled(viewModel.selectedClip == nil)
                 action("Скорость", icon: "gauge.with.dots.needle.67percent") { viewModel.showingSpeedRamp = true }
                     .disabled(viewModel.selectedClip == nil)
+                action("Эффекты", icon: "slider.horizontal.3") { viewModel.showingClipTools = true }
+                    .disabled(viewModel.selectedClip == nil)
                 action("Копия", icon: "plus.square.on.square") { viewModel.duplicateSelected() }
                     .disabled(viewModel.selectedClip == nil)
                 action(viewModel.selectedClip?.isMuted == true ? "Включить звук" : "Без звука", icon: "speaker.slash") { viewModel.toggleMuteSelected() }
@@ -194,4 +196,3 @@ struct ClipActionBar: View {
         .buttonStyle(.plain)
     }
 }
-

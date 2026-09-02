@@ -19,5 +19,19 @@ final class EditorProjectTests: XCTestCase {
         let project = EditProject(title: "Test", clips: [first, second])
         XCTAssertEqual(project.duration, 7, accuracy: 0.001)
     }
-}
 
+    func testNewEffectsAreNeutral() {
+        XCTAssertTrue(EffectSettings().isNeutral)
+        var effects = EffectSettings()
+        effects.saturation = 1.2
+        XCTAssertFalse(effects.isNeutral)
+    }
+
+    func testLegacyClipDecodesWithoutNewOptionalFields() throws {
+        let json = #"{"id":"00000000-0000-0000-0000-000000000001","fileName":"clip.mov","relativePath":"Media/clip.mov","kind":"video","sourceDuration":5,"timelineStart":0,"trimStart":0,"trimEnd":5,"layer":0,"isMuted":false,"transform":{"positionX":0,"positionY":0,"scale":1,"rotation":0,"opacity":1},"speedPoints":[{"id":"00000000-0000-0000-0000-000000000002","position":0,"rate":1},{"id":"00000000-0000-0000-0000-000000000003","position":1,"rate":1}]}"#
+        let clip = try JSONDecoder().decode(MediaClip.self, from: Data(json.utf8))
+        XCTAssertTrue(clip.resolvedEffects.isNeutral)
+        XCTAssertEqual(clip.resolvedTransition.style, .none)
+        XCTAssertEqual(clip.resolvedKeyframes.count, 2)
+    }
+}

@@ -43,6 +43,45 @@ struct ClipTransform: Codable, Equatable {
     var opacity: Double = 1
 }
 
+struct ClipKeyframe: Identifiable, Codable, Equatable {
+    var id = UUID()
+    var position: Double
+    var transform: ClipTransform
+
+    static let identity = [
+        ClipKeyframe(position: 0, transform: ClipTransform()),
+        ClipKeyframe(position: 1, transform: ClipTransform())
+    ]
+}
+
+struct EffectSettings: Codable, Equatable {
+    var brightness: Double = 0
+    var contrast: Double = 1
+    var saturation: Double = 1
+    var temperature: Double = 0
+    var vignette: Double = 0
+    var sharpen: Double = 0
+
+    var isNeutral: Bool {
+        abs(brightness) < 0.001 && abs(contrast - 1) < 0.001 &&
+        abs(saturation - 1) < 0.001 && abs(temperature) < 0.001 &&
+        abs(vignette) < 0.001 && abs(sharpen) < 0.001
+    }
+}
+
+enum TransitionStyle: String, Codable, CaseIterable, Identifiable {
+    case none = "Без перехода"
+    case crossDissolve = "Растворение"
+    case fadeToBlack = "Через затемнение"
+
+    var id: String { rawValue }
+}
+
+struct ClipTransition: Codable, Equatable {
+    var style: TransitionStyle = .none
+    var duration: Double = 0.35
+}
+
 struct MediaClip: Identifiable, Codable, Equatable {
     var id = UUID()
     var fileName: String
@@ -56,6 +95,9 @@ struct MediaClip: Identifiable, Codable, Equatable {
     var isMuted: Bool = false
     var transform = ClipTransform()
     var speedPoints = SpeedPoint.linear
+    var effects: EffectSettings?
+    var keyframes: [ClipKeyframe]?
+    var transition: ClipTransition?
 
     var trimmedDuration: Double { max(0.05, trimEnd - trimStart) }
 
@@ -74,6 +116,10 @@ struct MediaClip: Identifiable, Codable, Equatable {
     }
 
     var timelineEnd: Double { timelineStart + playbackDuration }
+
+    var resolvedEffects: EffectSettings { effects ?? EffectSettings() }
+    var resolvedKeyframes: [ClipKeyframe] { keyframes ?? ClipKeyframe.identity }
+    var resolvedTransition: ClipTransition { transition ?? ClipTransition() }
 }
 
 struct EditProject: Identifiable, Codable, Equatable {
@@ -113,4 +159,3 @@ enum SpeedPreset: String, CaseIterable, Identifiable {
         }
     }
 }
-
