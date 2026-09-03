@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.4.0
+
+### Fixed
+
+- Preview video now renders through a dedicated AVPlayerLayer while audio and video remain synchronized.
+- Speed-ramped preview items now include an explicit video composition and preserve source orientation.
+- Timeline playhead now follows actual AVPlayer playback time instead of staying visually frozen while audio plays.
+
+### Added
+
+- Long-press a clip to enter move mode with haptic feedback.
+- Drag selected clips left or right to reposition them in time.
+- Drag video and image clips vertically between V tracks.
+- Drag audio clips vertically between A tracks.
+- Magnetic snapping for clip start/end against the central playhead and neighboring clip boundaries.
+- Extra empty destination tracks appear automatically when additional V/A layers are needed.
+
+### Changed
+
+- The Cut workspace frame, ruler, track headers, and central playhead remain stationary while timeline content moves underneath.
+- Timeline panning is blocked while a clip is being moved so the workspace cannot drift accidentally.
+- Legacy audio clips are migrated from the old shared layer numbering to dedicated A-track numbering.
+- Embedded audio stays linked to its video clip when that video clip is moved.
+
 ## 1.3.1
 
 ### Fixed
