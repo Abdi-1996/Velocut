@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.5.0
+
+### Added
+
+- Video clips now show cached frame thumbnails directly inside the timeline.
+- Image clips show their source image inside the clip body.
+- Audio clips use a lightweight waveform-style visual treatment.
+- Clip move mode now displays a dashed ghost destination on the target track.
+- Magnetic snapping now shows a visible vertical snap guide and haptic feedback.
+- Added transport controls for Play from Start, Play/Pause, Loop, and Full Screen.
+- Added a dedicated full-screen preview with compact playback controls.
+
+### Fixed
+
+- A normal tap only selects a clip and no longer enters move mode.
+- Long-press move mode exits immediately when the finger is released or the gesture is cancelled.
+- Entering move mode no longer scales the clip; the clip is highlighted in red with haptic feedback instead.
+- Horizontal timeline scrubbing no longer moves the track area vertically.
+- Horizontal and vertical timeline gestures now lock to one axis after the initial movement threshold.
+- Manual V1 clip moves no longer get overwritten by automatic primary-track compaction on release.
+
+### Changed
+
+- Timeline clips are now rectangular with square edges and clearer trim handles.
+- During drag only lightweight visual state changes; project timing and track data are committed once on release.
+- Clip movement follows the finger while the ghost destination shows the exact snapped drop position.
+- Video/image clips snap only against visual clip boundaries; audio clips snap against audio boundaries; all clips can snap to the fixed playhead.
+- The transport controls are grouped on the left side of the preview toolbar for faster thumb access.
+
 ## 1.4.0
 
 ### Fixed
