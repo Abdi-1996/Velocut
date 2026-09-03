@@ -437,18 +437,10 @@ private struct TimelineClipView: View {
         .clipShape(Rectangle())
         .overlay {
             Rectangle()
-                .stroke(
+                .strokeBorder(
                     isMoving ? Color.red : (selected ? Color.white : Color.white.opacity(0.14)),
-                    lineWidth: isMoving ? 2.5 : (selected ? 2 : 1)
+                    lineWidth: isMoving ? 2 : (selected ? 2 : 1)
                 )
-        }
-        .overlay {
-            if isMoving {
-                Rectangle()
-                    .stroke(Color.red.opacity(0.55), lineWidth: 4)
-                    .blur(radius: 4)
-                    .allowsHitTesting(false)
-            }
         }
         .overlay(alignment: .leading) {
             if selected && !isMoving {
@@ -472,8 +464,12 @@ private struct TimelineClipView: View {
                     .padding(3)
             }
         }
+        .scaleEffect(1, anchor: .center)
         .offset(isMoving ? moveTranslation : .zero)
         .zIndex(isMoving ? 1000 : 0)
+        .transaction { transaction in
+            transaction.animation = nil
+        }
         .simultaneousGesture(clipMoveGesture)
         .onChange(of: moveGestureActive) { _, active in
             if !active, isMoving {
