@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.6.2
+
+### Fixed
+
+- Left and right clip-edge trim handles now own the drag gesture instead of allowing timeline scrubbing to steal the same touch.
+- Added a dedicated trim interaction state that blocks horizontal scrubbing, vertical track scrolling, and long-press clip movement while an edge handle is active.
+- Trim handles now use a full 44x44-point touch target while keeping the visible edge control compact.
+- Releasing a trim handle immediately returns gesture control to the timeline.
+
 ## 1.6.1
 
 ### Fixed
