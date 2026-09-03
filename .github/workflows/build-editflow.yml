@@ -13,84 +13,10 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  apply-1-6-6:
-    runs-on: ubuntu-latest
-    outputs:
-      changed: ${{ steps.patch.outputs.changed }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref_name }}
-      - name: Apply direct edge trim pan fix
-        id: patch
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          timeline_path = Path('EditFlow/EditFlow/Views/Editor/TimelineView.swift')
-          text = timeline_path.read_text()
-
-          text = text.replace('CapCutTrimTouchView', 'EdgeTrimPanCaptureView')
-
-          old_end = '''        let finalClip = trimPreviewClip ?? sourceClip\n\n        viewModel.previewNonRippleTrim(finalClip)\n        viewModel.finishNonRippleTrim()\n\n        resetTrimState()'''
-          new_end = '''        let finalClip = trimPreviewClip ?? sourceClip\n\n        viewModel.commitNonRippleTrim(finalClip)\n\n        resetTrimState()'''
-          if old_end not in text:
-              raise SystemExit('Could not locate endTrim commit block')
-          text = text.replace(old_end, new_end, 1)
-
-          start = text.index('    private func resolvedTrim(\n')
-          end = text.index('    private func snappedTrimBoundary(\n', start)
-          replacement = '''    private func resolvedTrim(\n        edge: TrimEdge,\n        origin: MediaClip,\n        deltaX: CGFloat\n    ) -> (clip: MediaClip, guide: Double?) {\n        let timelineDelta = Double(deltaX / max(1, zoom))\n        let sourcePerTimeline = origin.trimmedDuration / max(0.000_001, origin.playbackDuration)\n\n        switch edge {\n        case .left:\n            var minimumSource = origin\n            minimumSource.trimStart = max(0, origin.trimEnd - 0.05)\n\n            var maximumSource = origin\n            maximumSource.trimStart = 0\n\n            let minimumBoundary = origin.timelineEnd - maximumSource.playbackDuration\n            let maximumBoundary = origin.timelineEnd - minimumSource.playbackDuration\n            let proposedBoundary = origin.timelineStart + timelineDelta\n            let snapped = snappedTrimBoundary(\n                proposed: proposedBoundary,\n                minimum: minimumBoundary,\n                maximum: maximumBoundary\n            )\n\n            let effectiveTimelineDelta = snapped.boundary - origin.timelineStart\n            let sourceDelta = effectiveTimelineDelta * sourcePerTimeline\n\n            var resolved = origin\n            resolved.trimStart = min(\n                max(0, origin.trimStart + sourceDelta),\n                origin.trimEnd - 0.05\n            )\n            resolved.timelineStart = origin.timelineEnd - resolved.playbackDuration\n            return (resolved, snapped.guide)\n\n        case .right:\n            var minimumSource = origin\n            minimumSource.trimEnd = min(origin.sourceDuration, origin.trimStart + 0.05)\n\n            var maximumSource = origin\n            maximumSource.trimEnd = origin.sourceDuration\n\n            let minimumBoundary = origin.timelineStart + minimumSource.playbackDuration\n            let maximumBoundary = origin.timelineStart + maximumSource.playbackDuration\n            let proposedBoundary = origin.timelineEnd + timelineDelta\n            let snapped = snappedTrimBoundary(\n                proposed: proposedBoundary,\n                minimum: minimumBoundary,\n                maximum: maximumBoundary\n            )\n\n            let effectiveTimelineDelta = snapped.boundary - origin.timelineEnd\n            let sourceDelta = effectiveTimelineDelta * sourcePerTimeline\n\n            var resolved = origin\n            resolved.trimEnd = max(\n                origin.trimStart + 0.05,\n                min(origin.sourceDuration, origin.trimEnd + sourceDelta)\n            )\n            resolved.timelineStart = origin.timelineStart\n            return (resolved, snapped.guide)\n        }\n    }\n\n'''
-          text = text[:start] + replacement + text[end:]
-
-          recognizer_start = text.index('private struct EdgeTrimPanCaptureView: UIViewRepresentable {')
-          recognizer_end = text.index('private struct TimelineThumbnailStrip: View {', recognizer_start)
-          recognizer = '''private struct EdgeTrimPanCaptureView: UIViewRepresentable {\n    let onBegan: () -> Void\n    let onChanged: (CGFloat) -> Void\n    let onEnded: () -> Void\n\n    func makeCoordinator() -> Coordinator {\n        Coordinator(\n            onBegan: onBegan,\n            onChanged: onChanged,\n            onEnded: onEnded\n        )\n    }\n\n    func makeUIView(context: Context) -> UIView {\n        let view = UIView(frame: .zero)\n        view.backgroundColor = .clear\n        view.isUserInteractionEnabled = true\n        view.isExclusiveTouch = true\n        view.isMultipleTouchEnabled = false\n\n        let recognizer = EdgeTrimPanGestureRecognizer(\n            target: context.coordinator,\n            action: #selector(Coordinator.handlePan(_:))\n        )\n        recognizer.minimumNumberOfTouches = 1\n        recognizer.maximumNumberOfTouches = 1\n        recognizer.cancelsTouchesInView = true\n        recognizer.delaysTouchesBegan = false\n        recognizer.delaysTouchesEnded = false\n        recognizer.delegate = context.coordinator\n\n        view.addGestureRecognizer(recognizer)\n        return view\n    }\n\n    func updateUIView(_ uiView: UIView, context: Context) {\n        context.coordinator.onBegan = onBegan\n        context.coordinator.onChanged = onChanged\n        context.coordinator.onEnded = onEnded\n    }\n\n    final class Coordinator: NSObject, UIGestureRecognizerDelegate {\n        var onBegan: () -> Void\n        var onChanged: (CGFloat) -> Void\n        var onEnded: () -> Void\n\n        init(\n            onBegan: @escaping () -> Void,\n            onChanged: @escaping (CGFloat) -> Void,\n            onEnded: @escaping () -> Void\n        ) {\n            self.onBegan = onBegan\n            self.onChanged = onChanged\n            self.onEnded = onEnded\n        }\n\n        @objc\n        func handlePan(_ recognizer: UIPanGestureRecognizer) {\n            let translation = recognizer.translation(in: recognizer.view?.window)\n\n            switch recognizer.state {\n            case .began:\n                onBegan()\n                onChanged(translation.x)\n\n            case .changed:\n                onChanged(translation.x)\n\n            case .ended:\n                onChanged(translation.x)\n                onEnded()\n\n            case .cancelled, .failed:\n                onEnded()\n\n            default:\n                break\n            }\n        }\n\n        func gestureRecognizer(\n            _ gestureRecognizer: UIGestureRecognizer,\n            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer\n        ) -> Bool {\n            false\n        }\n    }\n}\n\nprivate final class EdgeTrimPanGestureRecognizer: UIPanGestureRecognizer {\n    override func canPrevent(_ preventedGestureRecognizer: UIGestureRecognizer) -> Bool {\n        true\n    }\n\n    override func canBePrevented(by preventingGestureRecognizer: UIGestureRecognizer) -> Bool {\n        false\n    }\n}\n\n'''
-          text = text[:recognizer_start] + recognizer + text[recognizer_end:]
-          timeline_path.write_text(text)
-
-          vm_path = Path('EditFlow/EditFlow/ViewModels/EditorViewModel.swift')
-          vm = vm_path.read_text()
-          method = '''    func commitNonRippleTrim(_ updatedClip: MediaClip) {\n        guard let index = project.clips.firstIndex(where: { $0.id == updatedClip.id }) else { return }\n\n        project.clips[index] = updatedClip\n        selectedClipID = updatedClip.id\n        trimSessionOrigin = nil\n        lastTrimSnapGuide = nil\n\n        invalidatePreview()\n        commit()\n        scrubTimeline(to: min(playhead, project.duration))\n    }\n\n'''
-          marker = '    func finishNonRippleTrim() {'
-          if 'func commitNonRippleTrim(_ updatedClip: MediaClip)' not in vm:
-              if marker not in vm:
-                  raise SystemExit('Could not locate finishNonRippleTrim marker')
-              vm = vm.replace(marker, method + marker, 1)
-              vm_path.write_text(vm)
-
-          project = Path('EditFlow/project.yml')
-          p = project.read_text()
-          p = p.replace('MARKETING_VERSION: 1.6.5', 'MARKETING_VERSION: 1.6.6')
-          p = p.replace('CURRENT_PROJECT_VERSION: 14', 'CURRENT_PROJECT_VERSION: 15')
-          project.write_text(p)
-
-          changelog = Path('EditFlow/CHANGELOG.md')
-          c = changelog.read_text()
-          header = '''## 1.6.6\n\n### Fixed\n\n- Replaced the edge-trim touch recognizer with a dedicated one-finger UIPanGestureRecognizer that directly tracks horizontal finger translation.\n- Trim pan cannot be prevented by the timeline or clip-move recognizers, so selected clip edges keep ownership of the drag.\n- Left trim now changes only trimStart and the visible left timeline boundary; right trim changes only trimEnd and the visible right boundary.\n- Removed the second trim-resolution pass on release: the final locally previewed trim is committed directly to the project once.\n- Simplified speed-ramp trim mapping to a direct source-time/timeline-time ratio for stable 1:1 edge movement.\n\n'''
-          if '## 1.6.6' not in c:
-              c = c.replace('# Changelog\n\n', '# Changelog\n\n' + header, 1)
-              changelog.write_text(c)
-          PY
-
-          if git diff --quiet -- EditFlow/EditFlow/Views/Editor/TimelineView.swift EditFlow/EditFlow/ViewModels/EditorViewModel.swift EditFlow/project.yml EditFlow/CHANGELOG.md; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add EditFlow/EditFlow/Views/Editor/TimelineView.swift EditFlow/EditFlow/ViewModels/EditorViewModel.swift EditFlow/project.yml EditFlow/CHANGELOG.md
-          git commit -m "Rebuild EditFlow edge trim with direct pan"
-          git push
-          echo "changed=true" >> "$GITHUB_OUTPUT"
-
   test:
-    needs: apply-1-6-6
-    if: needs.apply-1-6-6.outputs.changed != 'true'
     runs-on: macos-15
     timeout-minutes: 20
     steps:
@@ -140,8 +66,6 @@ jobs:
             test
 
   unsigned-ipa:
-    needs: apply-1-6-6
-    if: needs.apply-1-6-6.outputs.changed != 'true'
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
