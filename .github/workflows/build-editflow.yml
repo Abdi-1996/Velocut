@@ -13,10 +13,35 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
+  apply-trim-fix:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.patch.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+      - name: Apply trim handle repair
+        id: patch
+        run: |
+          python3 EditFlow/scripts/apply_trim_handle_fix_1_6_2.py
+          if git diff --quiet -- EditFlow/EditFlow/Views/Editor/TimelineView.swift; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add EditFlow/EditFlow/Views/Editor/TimelineView.swift
+          git commit -m "Fix EditFlow trim handle gesture ownership"
+          git push
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
   test:
+    needs: apply-trim-fix
+    if: needs.apply-trim-fix.outputs.changed != 'true'
     runs-on: macos-15
     timeout-minutes: 20
     steps:
@@ -66,6 +91,8 @@ jobs:
             test
 
   unsigned-ipa:
+    needs: apply-trim-fix
+    if: needs.apply-trim-fix.outputs.changed != 'true'
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
