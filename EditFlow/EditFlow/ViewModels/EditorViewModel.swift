@@ -11,6 +11,14 @@ struct ClipMovePlacement: Equatable {
     var snapGuide: Double?
 }
 
+enum ClipToolsSection: String, CaseIterable, Identifiable {
+    case effects = "Эффекты"
+    case transition = "Переход"
+    case animation = "Анимация"
+
+    var id: String { rawValue }
+}
+
 @MainActor
 final class EditorViewModel: ObservableObject {
     static let audioLayerBase = 100
@@ -29,6 +37,7 @@ final class EditorViewModel: ObservableObject {
     @Published var exportedURL: URL?
     @Published var showingSpeedRamp = false
     @Published var showingClipTools = false
+    @Published var clipToolsSection: ClipToolsSection = .effects
     @Published var showingExport = false
     @Published private(set) var trimPreviewImage: UIImage?
     @Published private(set) var trimPreviewSourceTime: Double?
@@ -65,7 +74,7 @@ final class EditorViewModel: ObservableObject {
         }
 
         self.project = normalizedProject
-        selectedClipID = normalizedProject.clips.first?.id
+        selectedClipID = nil
         playhead = min(normalizedProject.clips.first?.timelineStart ?? 0, normalizedProject.duration)
 
         installPlaybackObservers()
@@ -197,7 +206,15 @@ final class EditorViewModel: ObservableObject {
     }
 
     func select(_ clip: MediaClip) {
+        if selectedClipID != clip.id {
+            closeInlineEditor()
+        }
         selectedClipID = clip.id
+    }
+
+    func deselectClip() {
+        closeInlineEditor()
+        selectedClipID = nil
     }
 
     func openSpeedRamp() {
@@ -212,8 +229,9 @@ final class EditorViewModel: ObservableObject {
         scrubTimeline(to: target)
     }
 
-    func openClipTools() {
+    func openClipTools(section: ClipToolsSection = .effects) {
         guard selectedClip != nil else { return }
+        clipToolsSection = section
         showingSpeedRamp = false
         showingClipTools = true
     }
@@ -361,7 +379,8 @@ final class EditorViewModel: ObservableObject {
     func deleteSelected() {
         guard let selectedClipID else { return }
         project.clips.removeAll { $0.id == selectedClipID }
-        self.selectedClipID = project.clips.first?.id
+        self.selectedClipID = nil
+        closeInlineEditor()
         compactPrimaryTrack()
         invalidatePreview()
         commit()

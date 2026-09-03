@@ -23,7 +23,7 @@ struct InlineEditorSettings: View {
             Button {
                 viewModel.closeInlineEditor()
             } label: {
-                Image(systemName: "chevron.down")
+                Image(systemName: "chevron.left")
                     .font(.system(size: 15, weight: .semibold))
                     .frame(width: 34, height: 34)
                     .background(.white.opacity(0.08), in: Circle())
@@ -31,7 +31,7 @@ struct InlineEditorSettings: View {
             .buttonStyle(.plain)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(viewModel.showingSpeedRamp ? "Speed Ramp" : "Настройки клипа")
+                Text(viewModel.showingSpeedRamp ? "Speed Ramp" : viewModel.clipToolsSection.rawValue)
                     .font(.subheadline.weight(.semibold))
                 Text(viewModel.selectedClip?.fileName ?? "Клип не выбран")
                     .font(.caption2)
@@ -172,19 +172,11 @@ private struct InlineSpeedCurveView: View {
 
 private struct InlineClipToolsEditor: View {
     @ObservedObject var viewModel: EditorViewModel
-    @State private var section: ToolSection = .effects
-
-    private enum ToolSection: String, CaseIterable, Identifiable {
-        case effects = "Эффекты"
-        case transition = "Переход"
-        case animation = "Keyframes"
-        var id: String { rawValue }
-    }
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("Инструмент", selection: $section) {
-                ForEach(ToolSection.allCases) { item in
+            Picker("Инструмент", selection: $viewModel.clipToolsSection) {
+                ForEach(ClipToolsSection.allCases) { item in
                     Text(item.rawValue).tag(item)
                 }
             }
@@ -193,7 +185,7 @@ private struct InlineClipToolsEditor: View {
             .padding(.vertical, 10)
 
             ScrollView {
-                switch section {
+                switch viewModel.clipToolsSection {
                 case .effects:
                     effectsControls
                 case .transition:

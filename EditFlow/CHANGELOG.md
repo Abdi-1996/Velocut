@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.8.0
+
+### Added
+
+- Added one CapCut-style contextual bottom toolbar that automatically switches between global project actions and controls for the selected video, image, or audio clip.
+- Added a Back action in selected-object context to clear selection and return to the global project tools.
+- Video context now exposes working Split, Speed Ramp, mute, Effects, Transition, Animation, Duplicate, and Delete actions from one row.
+- Image and audio selections now receive their own relevant working tool sets instead of sharing a generic workspace dock.
+
+### Changed
+
+- Removed the two-row `ContextToolBar` + `EditorToolDock` runtime layout from iPhone and iPad and replaced it with one bottom interaction surface.
+- Opening Effects, Transition, or Animation now opens the matching section directly inside the existing inline editor; its back button returns to the selected-object toolbar.
+- Existing projects now open with no clip selected so the global bottom tools are visible first.
+
 ## 1.7.0
 
 ### Added

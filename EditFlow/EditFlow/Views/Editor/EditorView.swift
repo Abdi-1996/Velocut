@@ -165,16 +165,13 @@ struct EditorView: View {
                 TimelineView(viewModel: viewModel)
                     .frame(minHeight: 185, idealHeight: 220)
 
-                ContextToolBar(
-                    tool: selectedTool,
+                ContextualEditorBar(
                     viewModel: viewModel,
                     galleryAction: openMainGallery,
                     overlayAction: openOverlayGallery,
                     audioGalleryAction: { showingAudioVideoGallery = true },
                     fileAction: { showingImporter = true }
                 )
-
-                EditorToolDock(selection: $selectedTool)
             }
         }
         .background(Color(red: 0.035, green: 0.035, blue: 0.042))
@@ -193,15 +190,13 @@ struct EditorView: View {
                 )
                 TimelineView(viewModel: viewModel)
                     .frame(height: 300)
-                ContextToolBar(
-                    tool: selectedTool,
+                ContextualEditorBar(
                     viewModel: viewModel,
                     galleryAction: openMainGallery,
                     overlayAction: openOverlayGallery,
                     audioGalleryAction: { showingAudioVideoGallery = true },
                     fileAction: { showingImporter = true }
                 )
-                EditorToolDock(selection: $selectedTool)
             }
 
             if viewModel.hasInlineEditor {
@@ -467,6 +462,119 @@ private struct FullScreenPreview: View {
             }
         }
         .statusBarHidden(true)
+    }
+}
+
+private struct ContextualEditorBar: View {
+    @ObservedObject var viewModel: EditorViewModel
+    let galleryAction: () -> Void
+    let overlayAction: () -> Void
+    let audioGalleryAction: () -> Void
+    let fileAction: () -> Void
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 4) {
+                if let clip = viewModel.selectedClip {
+                    item("Назад", "chevron.left") {
+                        viewModel.deselectClip()
+                    }
+
+                    switch clip.kind {
+                    case .video:
+                        item("Разделить", "scissors") {
+                            viewModel.splitSelected(at: viewModel.playhead)
+                        }
+                        item("Скорость", "gauge.with.dots.needle.67percent") {
+                            viewModel.openSpeedRamp()
+                        }
+                        item(
+                            clip.isMuted ? "Включить звук" : "Без звука",
+                            clip.isMuted ? "speaker.wave.2" : "speaker.slash"
+                        ) {
+                            viewModel.toggleMuteSelected()
+                        }
+                        item("Эффекты", "sparkles") {
+                            viewModel.openClipTools(section: .effects)
+                        }
+                        item("Переход", "rectangle.split.2x1") {
+                            viewModel.openClipTools(section: .transition)
+                        }
+                        item("Анимация", "diamond") {
+                            viewModel.openClipTools(section: .animation)
+                        }
+                        item("Копия", "plus.square.on.square") {
+                            viewModel.duplicateSelected()
+                        }
+                        item("Удалить", "trash", role: .destructive) {
+                            viewModel.deleteSelected()
+                        }
+
+                    case .image:
+                        item("Эффекты", "sparkles") {
+                            viewModel.openClipTools(section: .effects)
+                        }
+                        item("Анимация", "diamond") {
+                            viewModel.openClipTools(section: .animation)
+                        }
+                        item("Копия", "plus.square.on.square") {
+                            viewModel.duplicateSelected()
+                        }
+                        item("Удалить", "trash", role: .destructive) {
+                            viewModel.deleteSelected()
+                        }
+
+                    case .audio:
+                        item("Разделить", "scissors") {
+                            viewModel.splitSelected(at: viewModel.playhead)
+                        }
+                        item(
+                            clip.isMuted ? "Включить звук" : "Без звука",
+                            clip.isMuted ? "speaker.wave.2" : "speaker.slash"
+                        ) {
+                            viewModel.toggleMuteSelected()
+                        }
+                        item("Копия", "plus.square.on.square") {
+                            viewModel.duplicateSelected()
+                        }
+                        item("Удалить", "trash", role: .destructive) {
+                            viewModel.deleteSelected()
+                        }
+                    }
+                } else {
+                    item("Медиа", "photo.on.rectangle.angled", galleryAction)
+                    item("Файлы", "folder", fileAction)
+                    item("Аудио из видео", "waveform.badge.plus", audioGalleryAction)
+                    item("Наложение", "square.stack.3d.up.badge.plus", overlayAction)
+                }
+            }
+            .padding(.horizontal, 8)
+        }
+        .frame(height: 66)
+        .background(.ultraThinMaterial)
+        .animation(.easeOut(duration: 0.16), value: viewModel.selectedClipID)
+    }
+
+    private func item(
+        _ title: String,
+        _ icon: String,
+        role: ButtonRole? = nil,
+        _ action: @escaping () -> Void
+    ) -> some View {
+        Button(role: role, action: action) {
+            VStack(spacing: 5) {
+                Image(systemName: icon)
+                    .font(.system(size: 18, weight: .medium))
+                Text(title)
+                    .font(.caption2)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.76)
+            }
+            .foregroundStyle(role == .destructive ? Color.red : Color.white.opacity(0.9))
+            .frame(minWidth: 72, minHeight: 54)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 
