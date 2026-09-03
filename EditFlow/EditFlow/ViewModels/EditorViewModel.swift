@@ -362,6 +362,19 @@ final class EditorViewModel: ObservableObject {
         project.clips[index] = resolved
     }
 
+    func commitNonRippleTrim(_ updatedClip: MediaClip) {
+        guard let index = project.clips.firstIndex(where: { $0.id == updatedClip.id }) else { return }
+
+        project.clips[index] = updatedClip
+        selectedClipID = updatedClip.id
+        trimSessionOrigin = nil
+        lastTrimSnapGuide = nil
+
+        invalidatePreview()
+        commit()
+        scrubTimeline(to: min(playhead, project.duration))
+    }
+
     func finishNonRippleTrim() {
         trimSessionOrigin = nil
         lastTrimSnapGuide = nil

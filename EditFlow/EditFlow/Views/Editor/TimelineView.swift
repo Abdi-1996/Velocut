@@ -607,7 +607,7 @@ private struct TimelineClipView: View {
 
     private func trimHandle(edge: TrimEdge) -> some View {
         ZStack(alignment: edge == .left ? .leading : .trailing) {
-            CapCutTrimTouchView(
+            EdgeTrimPanCaptureView(
                 onBegan: {
                     beginTrim(edge: edge)
                 },
@@ -683,8 +683,7 @@ private struct TimelineClipView: View {
 
         let finalClip = trimPreviewClip ?? sourceClip
 
-        viewModel.previewNonRippleTrim(finalClip)
-        viewModel.finishNonRippleTrim()
+        viewModel.commitNonRippleTrim(finalClip)
 
         resetTrimState()
     }
@@ -711,74 +710,61 @@ private struct TimelineClipView: View {
         deltaX: CGFloat
     ) -> (clip: MediaClip, guide: Double?) {
         let timelineDelta = Double(deltaX / max(1, zoom))
+        let sourcePerTimeline = origin.trimmedDuration / max(0.000_001, origin.playbackDuration)
 
         switch edge {
         case .left:
-            var shortest = origin
-            shortest.trimStart = max(0, origin.trimEnd - 0.05)
+            var minimumSource = origin
+            minimumSource.trimStart = max(0, origin.trimEnd - 0.05)
 
-            var longest = origin
-            longest.trimStart = 0
+            var maximumSource = origin
+            maximumSource.trimStart = 0
 
-            let minimumDuration = shortest.playbackDuration
-            let maximumDuration = longest.playbackDuration
-
-            let minimumBoundary = origin.timelineEnd - maximumDuration
-            let maximumBoundary = origin.timelineEnd - minimumDuration
-
-            var boundary = origin.timelineStart + timelineDelta
-            boundary = min(max(minimumBoundary, boundary), maximumBoundary)
-
+            let minimumBoundary = origin.timelineEnd - maximumSource.playbackDuration
+            let maximumBoundary = origin.timelineEnd - minimumSource.playbackDuration
+            let proposedBoundary = origin.timelineStart + timelineDelta
             let snapped = snappedTrimBoundary(
-                proposed: boundary,
+                proposed: proposedBoundary,
                 minimum: minimumBoundary,
                 maximum: maximumBoundary
             )
-            boundary = snapped.boundary
 
-            let targetDuration = origin.timelineEnd - boundary
+            let effectiveTimelineDelta = snapped.boundary - origin.timelineStart
+            let sourceDelta = effectiveTimelineDelta * sourcePerTimeline
 
             var resolved = origin
-            resolved.trimStart = trimStart(
-                forPlaybackDuration: targetDuration,
-                origin: origin
+            resolved.trimStart = min(
+                max(0, origin.trimStart + sourceDelta),
+                origin.trimEnd - 0.05
             )
             resolved.timelineStart = origin.timelineEnd - resolved.playbackDuration
-
             return (resolved, snapped.guide)
 
         case .right:
-            var shortest = origin
-            shortest.trimEnd = min(origin.sourceDuration, origin.trimStart + 0.05)
+            var minimumSource = origin
+            minimumSource.trimEnd = min(origin.sourceDuration, origin.trimStart + 0.05)
 
-            var longest = origin
-            longest.trimEnd = origin.sourceDuration
+            var maximumSource = origin
+            maximumSource.trimEnd = origin.sourceDuration
 
-            let minimumDuration = shortest.playbackDuration
-            let maximumDuration = longest.playbackDuration
-
-            let minimumBoundary = origin.timelineStart + minimumDuration
-            let maximumBoundary = origin.timelineStart + maximumDuration
-
-            var boundary = origin.timelineEnd + timelineDelta
-            boundary = min(max(minimumBoundary, boundary), maximumBoundary)
-
+            let minimumBoundary = origin.timelineStart + minimumSource.playbackDuration
+            let maximumBoundary = origin.timelineStart + maximumSource.playbackDuration
+            let proposedBoundary = origin.timelineEnd + timelineDelta
             let snapped = snappedTrimBoundary(
-                proposed: boundary,
+                proposed: proposedBoundary,
                 minimum: minimumBoundary,
                 maximum: maximumBoundary
             )
-            boundary = snapped.boundary
 
-            let targetDuration = boundary - origin.timelineStart
+            let effectiveTimelineDelta = snapped.boundary - origin.timelineEnd
+            let sourceDelta = effectiveTimelineDelta * sourcePerTimeline
 
             var resolved = origin
-            resolved.trimEnd = trimEnd(
-                forPlaybackDuration: targetDuration,
-                origin: origin
+            resolved.trimEnd = max(
+                origin.trimStart + 0.05,
+                min(origin.sourceDuration, origin.trimEnd + sourceDelta)
             )
             resolved.timelineStart = origin.timelineStart
-
             return (resolved, snapped.guide)
         }
     }
@@ -1049,7 +1035,7 @@ private struct TimelineClipView: View {
     }
 }
 
-private struct CapCutTrimTouchView: UIViewRepresentable {
+private struct EdgeTrimPanCaptureView: UIViewRepresentable {
     let onBegan: () -> Void
     let onChanged: (CGFloat) -> Void
     let onEnded: () -> Void
@@ -1066,19 +1052,19 @@ private struct CapCutTrimTouchView: UIViewRepresentable {
         let view = UIView(frame: .zero)
         view.backgroundColor = .clear
         view.isUserInteractionEnabled = true
+        view.isExclusiveTouch = true
+        view.isMultipleTouchEnabled = false
 
-        let recognizer = UILongPressGestureRecognizer(
+        let recognizer = EdgeTrimPanGestureRecognizer(
             target: context.coordinator,
-            action: #selector(Coordinator.handlePressDrag(_:))
+            action: #selector(Coordinator.handlePan(_:))
         )
-        recognizer.minimumPressDuration = 0
-        recognizer.allowableMovement = .greatestFiniteMagnitude
+        recognizer.minimumNumberOfTouches = 1
+        recognizer.maximumNumberOfTouches = 1
         recognizer.cancelsTouchesInView = true
         recognizer.delaysTouchesBegan = false
         recognizer.delaysTouchesEnded = false
         recognizer.delegate = context.coordinator
-
-        view.isExclusiveTouch = true
 
         view.addGestureRecognizer(recognizer)
         return view
@@ -1095,8 +1081,6 @@ private struct CapCutTrimTouchView: UIViewRepresentable {
         var onChanged: (CGFloat) -> Void
         var onEnded: () -> Void
 
-        private var startX: CGFloat?
-
         init(
             onBegan: @escaping () -> Void,
             onChanged: @escaping (CGFloat) -> Void,
@@ -1108,28 +1092,22 @@ private struct CapCutTrimTouchView: UIViewRepresentable {
         }
 
         @objc
-        func handlePressDrag(_ recognizer: UILongPressGestureRecognizer) {
-            let window = recognizer.view?.window
-            let point = recognizer.location(in: window)
+        func handlePan(_ recognizer: UIPanGestureRecognizer) {
+            let translation = recognizer.translation(in: recognizer.view?.window)
 
             switch recognizer.state {
             case .began:
-                startX = point.x
                 onBegan()
+                onChanged(translation.x)
 
             case .changed:
-                guard let startX else { return }
-                onChanged(point.x - startX)
+                onChanged(translation.x)
 
             case .ended:
-                if let startX {
-                    onChanged(point.x - startX)
-                }
-                self.startX = nil
+                onChanged(translation.x)
                 onEnded()
 
             case .cancelled, .failed:
-                startX = nil
                 onEnded()
 
             default:
@@ -1143,6 +1121,16 @@ private struct CapCutTrimTouchView: UIViewRepresentable {
         ) -> Bool {
             false
         }
+    }
+}
+
+private final class EdgeTrimPanGestureRecognizer: UIPanGestureRecognizer {
+    override func canPrevent(_ preventedGestureRecognizer: UIGestureRecognizer) -> Bool {
+        true
+    }
+
+    override func canBePrevented(by preventingGestureRecognizer: UIGestureRecognizer) -> Bool {
+        false
     }
 }
 

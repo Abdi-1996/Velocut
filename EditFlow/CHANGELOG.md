@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.6.6
+
+### Fixed
+
+- Replaced the edge-trim touch recognizer with a dedicated one-finger UIPanGestureRecognizer that directly tracks horizontal finger translation.
+- Trim pan cannot be prevented by the timeline or clip-move recognizers, so selected clip edges keep ownership of the drag.
+- Left trim now changes only trimStart and the visible left timeline boundary; right trim changes only trimEnd and the visible right boundary.
+- Removed the second trim-resolution pass on release: the final locally previewed trim is committed directly to the project once.
+- Simplified speed-ramp trim mapping to a direct source-time/timeline-time ratio for stable 1:1 edge movement.
+
 ## 1.6.5
 
 ### Fixed
