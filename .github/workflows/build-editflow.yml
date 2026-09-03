@@ -1,5 +1,5 @@
 name: EditFlow iOS Build
-# Final clean CI for EditFlow 1.6.9
+# Final clean CI for EditFlow 1.6.9 (live trim frame preview)
 
 on:
   workflow_dispatch:
