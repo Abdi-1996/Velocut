@@ -1137,7 +1137,7 @@ private struct TimelineThumbnailStrip: View {
     }
 
     private var requestKey: String {
-        "\(clip.id.uuidString)-\(String(format: \"%.3f\", clip.trimStart))-\(String(format: \"%.3f\", clip.trimEnd))-\(count)-\(Int(height))"
+        "\(clip.id.uuidString)-\(String(format: "%.3f", clip.trimStart))-\(String(format: "%.3f", clip.trimEnd))-\(count)-\(Int(height))"
     }
 
     var body: some View {

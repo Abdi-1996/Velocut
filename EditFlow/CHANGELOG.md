@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.6.3
+
+### Fixed
+
+- Rebuilt clip-edge trimming around a dedicated touch-down recognizer so the trim handle owns the finger immediately, similar to CapCut mobile.
+- Trim now uses a local visual preview while dragging instead of mutating project clip timing every pixel, preventing the handle from losing its gesture as the clip width changes.
+- Left and right trim edges follow the finger in screen coordinates and commit source trim points only once on release.
+- Magnetic trim snapping remains active and displays an orange alignment guide with haptic feedback.
+- Speed-ramped clips now resolve trim boundaries from playback duration so the visible edge remains aligned with the finger.
+
+### Changed
+
+- Timeline scrolling and long-press clip movement are disabled from touch-down until the trim handle is released.
+
 ## 1.6.2
 
 ### Fixed
