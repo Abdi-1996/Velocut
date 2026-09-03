@@ -1,5 +1,6 @@
-import AVKit
+import AVFoundation
 import SwiftUI
+import UIKit
 
 struct GlassCardModifier: ViewModifier {
     func body(content: Content) -> some View {
@@ -16,19 +17,40 @@ extension View {
     func glassCard() -> some View { modifier(GlassCardModifier()) }
 }
 
-struct PlayerContainer: UIViewControllerRepresentable {
-    let player: AVPlayer
+private final class PlayerLayerView: UIView {
+    override static var layerClass: AnyClass { AVPlayerLayer.self }
 
-    func makeUIViewController(context: Context) -> AVPlayerViewController {
-        let controller = AVPlayerViewController()
-        controller.player = player
-        controller.videoGravity = .resizeAspect
-        controller.showsPlaybackControls = true
-        return controller
+    var playerLayer: AVPlayerLayer {
+        layer as! AVPlayerLayer
     }
 
-    func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {
-        controller.player = player
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .black
+        playerLayer.videoGravity = .resizeAspect
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        backgroundColor = .black
+        playerLayer.videoGravity = .resizeAspect
+    }
+}
+
+struct PlayerContainer: UIViewRepresentable {
+    let player: AVPlayer
+
+    func makeUIView(context: Context) -> PlayerLayerView {
+        let view = PlayerLayerView()
+        view.playerLayer.player = player
+        return view
+    }
+
+    func updateUIView(_ view: PlayerLayerView, context: Context) {
+        if view.playerLayer.player !== player {
+            view.playerLayer.player = player
+        }
+        view.playerLayer.videoGravity = .resizeAspect
     }
 }
 
@@ -41,4 +63,3 @@ struct EmptyPreview: View {
         )
     }
 }
-
