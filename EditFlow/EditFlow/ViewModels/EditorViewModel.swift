@@ -62,9 +62,6 @@ final class EditorViewModel: ObservableObject {
 
     deinit {
         previewBuildTask?.cancel()
-        if let timeObserver {
-            player.removeTimeObserver(timeObserver)
-        }
         if let endObserver {
             NotificationCenter.default.removeObserver(endObserver)
         }
@@ -419,14 +416,14 @@ final class EditorViewModel: ObservableObject {
         playbackWasActive = false
         let frame = 1 / Double(max(1, project.frameRate))
         let nextTime = clip.timelineEnd + frame * 0.5
-
-        guard let next = project.clips
+        let candidates = project.clips
             .filter { $0.kind != .audio && $0.timelineEnd > nextTime }
-            .sorted(by: {
-                if $0.timelineStart == $1.timelineStart { return $0.layer > $1.layer }
-                return $0.timelineStart < $1.timelineStart
-            })
-            .first else {
+            .sorted { lhs, rhs in
+                if lhs.timelineStart == rhs.timelineStart { return lhs.layer > rhs.layer }
+                return lhs.timelineStart < rhs.timelineStart
+            }
+
+        guard let next = candidates.first else {
             playhead = min(project.duration, clip.timelineEnd)
             return
         }
