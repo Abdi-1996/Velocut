@@ -1,7 +1,8 @@
 import AVFoundation
 import Foundation
 
-actor PreviewPlaybackService {
+@MainActor
+final class PreviewPlaybackService {
     private let timescale: CMTimeScale = 600
 
     func makePlayerItem(for clip: MediaClip, url: URL) async throws -> AVPlayerItem {
