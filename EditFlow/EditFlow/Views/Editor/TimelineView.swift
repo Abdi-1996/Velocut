@@ -46,7 +46,7 @@ struct TimelineView: View {
         case vertical
     }
 
-    private struct TimelineMovePreview: Equatable {
+    fileprivate struct TimelineMovePreview: Equatable {
         var clipID: UUID
         var placement: ClipMovePlacement
     }
