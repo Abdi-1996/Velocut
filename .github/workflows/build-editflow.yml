@@ -18,6 +18,7 @@ permissions:
 jobs:
   test:
     runs-on: macos-15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: Select Xcode
@@ -42,6 +43,13 @@ jobs:
         run: |
           DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; data=json.load(sys.stdin); print(next((d["udid"] for devices in data["devices"].values() for d in devices if d.get("isAvailable") and "iPhone" in d.get("name", "")), ""))')
           echo "device_id=$DEVICE_ID" >> "$GITHUB_OUTPUT"
+      - name: Boot simulator
+        if: steps.simulator.outputs.device_id != ''
+        env:
+          DEVICE_ID: ${{ steps.simulator.outputs.device_id }}
+        run: |
+          xcrun simctl boot "$DEVICE_ID" 2>/dev/null || true
+          xcrun simctl bootstatus "$DEVICE_ID" -b
       - name: Run unit tests
         if: steps.simulator.outputs.device_id != ''
         env:
@@ -53,6 +61,7 @@ jobs:
             -scheme EditFlow \
             -sdk iphonesimulator \
             -destination "platform=iOS Simulator,id=$DEVICE_ID" \
+            -parallel-testing-enabled NO \
             CODE_SIGNING_ALLOWED=NO \
             test
 
