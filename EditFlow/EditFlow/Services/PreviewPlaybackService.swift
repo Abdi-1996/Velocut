@@ -19,6 +19,8 @@ final class PreviewPlaybackService {
             return AVPlayerItem(asset: asset)
         }
 
+        destinationVideo.preferredTransform = try await sourceVideo.load(.preferredTransform)
+
         let sourceAudio = try await asset.loadTracks(withMediaType: .audio).first
         let destinationAudio = sourceAudio == nil ? nil : composition.addMutableTrack(
             withMediaType: .audio,
