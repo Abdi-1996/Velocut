@@ -10,6 +10,7 @@ struct TimelineView: View {
     @State private var panAxis: TimelinePanAxis?
     @State private var snappingEnabled = true
     @State private var movingClipID: UUID?
+    @State private var trimmingClipID: UUID?
     @State private var movePreview: TimelineMovePreview?
 
     private let labelWidth: CGFloat = 44
@@ -243,6 +244,7 @@ struct TimelineView: View {
                     laneOrder: trackNumbers,
                     snappingEnabled: snappingEnabled,
                     movingClipID: $movingClipID,
+                    trimmingClipID: $trimmingClipID,
                     movePreview: Binding(
                         get: { movePreview },
                         set: { movePreview = $0 }
@@ -256,7 +258,7 @@ struct TimelineView: View {
                     y: 4
                 )
                 .onTapGesture {
-                    guard movingClipID == nil else { return }
+                    guard movingClipID == nil, trimmingClipID == nil else { return }
                     viewModel.select(clip)
                 }
                 .accessibilityLabel("\(clip.fileName), \(clip.playbackDuration.formattedDuration)")
@@ -299,7 +301,7 @@ struct TimelineView: View {
     private func timelineNavigationGesture(viewportHeight: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 3)
             .onChanged { value in
-                guard movingClipID == nil else { return }
+                guard movingClipID == nil, trimmingClipID == nil else { return }
 
                 let dx = value.translation.width
                 let dy = value.translation.height
@@ -338,7 +340,7 @@ struct TimelineView: View {
     private var rulerPanGesture: some Gesture {
         DragGesture(minimumDistance: 2)
             .onChanged { value in
-                guard movingClipID == nil else { return }
+                guard movingClipID == nil, trimmingClipID == nil else { return }
                 if panOriginTime == nil { panOriginTime = viewModel.playhead }
                 guard let origin = panOriginTime else { return }
                 let rawTime = origin - Double(value.translation.width / zoom)
@@ -395,6 +397,7 @@ private struct TimelineClipView: View {
     let laneOrder: [Int]
     let snappingEnabled: Bool
     @Binding var movingClipID: UUID?
+    @Binding var trimmingClipID: UUID?
     @Binding var movePreview: TimelineView.TimelineMovePreview?
     let mediaURL: URL
     @ObservedObject var viewModel: EditorViewModel
@@ -445,13 +448,11 @@ private struct TimelineClipView: View {
         .overlay(alignment: .leading) {
             if selected && !isMoving {
                 trimHandle(edge: .left)
-                    .offset(x: -7)
             }
         }
         .overlay(alignment: .trailing) {
             if selected && !isMoving {
                 trimHandle(edge: .right)
-                    .offset(x: 7)
             }
         }
         .overlay(alignment: .topTrailing) {
@@ -519,17 +520,21 @@ private struct TimelineClipView: View {
     }
 
     private func trimHandle(edge: TrimEdge) -> some View {
-        Rectangle()
-            .fill(handleColor)
-            .frame(width: 14, height: 36)
-            .overlay {
-                Capsule()
-                    .fill(.white.opacity(0.92))
-                    .frame(width: 2, height: 18)
-            }
-            .contentShape(Rectangle().inset(by: -14))
-            .highPriorityGesture(trimGesture(edge: edge))
-            .accessibilityLabel(edge == .left ? "Обрезать начало клипа" : "Обрезать конец клипа")
+        ZStack(alignment: edge == .left ? .leading : .trailing) {
+            Color.clear
+            Rectangle()
+                .fill(handleColor)
+                .frame(width: 14, height: 38)
+                .overlay {
+                    Capsule()
+                        .fill(.white.opacity(0.92))
+                        .frame(width: 2, height: 20)
+                }
+        }
+        .frame(width: 44, height: 44)
+        .contentShape(Rectangle())
+        .highPriorityGesture(trimGesture(edge: edge), including: .gesture)
+        .accessibilityLabel(edge == .left ? "Обрезать начало клипа" : "Обрезать конец клипа")
     }
 
     private var clipMoveGesture: some Gesture {
@@ -570,7 +575,7 @@ private struct TimelineClipView: View {
     }
 
     private func activateMoveIfNeeded() {
-        guard !isMoving else { return }
+        guard !isMoving, trimmingClipID == nil else { return }
         isMoving = true
         movingClipID = clip.id
         viewModel.select(clip)
@@ -639,6 +644,11 @@ private struct TimelineClipView: View {
     private func trimGesture(edge: TrimEdge) -> some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .global)
             .onChanged { value in
+                if trimmingClipID != clip.id {
+                    trimmingClipID = clip.id
+                    viewModel.select(clip)
+                }
+
                 switch edge {
                 case .left:
                     if leftDragOrigin == nil { leftDragOrigin = clip }
@@ -653,6 +663,9 @@ private struct TimelineClipView: View {
             .onEnded { _ in
                 leftDragOrigin = nil
                 rightDragOrigin = nil
+                if trimmingClipID == clip.id {
+                    trimmingClipID = nil
+                }
                 viewModel.finishNonRippleTrim()
             }
     }
