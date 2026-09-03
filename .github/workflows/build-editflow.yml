@@ -10,7 +10,7 @@ on:
       - ".github/workflows/build-editflow.yml"
 
 concurrency:
-  group: editflow-${{ github.ref }}
+  group: editflow-current-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
