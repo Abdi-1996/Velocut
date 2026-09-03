@@ -1,6 +1,7 @@
 from pathlib import Path
 
-path = Path(__file__).resolve().parents[1] / "EditFlow/Views/Editor/TimelineView.swift"
+root = Path(__file__).resolve().parents[1]
+path = root / "EditFlow/Views/Editor/TimelineView.swift"
 text = path.read_text()
 original = text
 
@@ -29,7 +30,6 @@ replace_once(
     "                .onTapGesture {\n                    guard movingClipID == nil, trimmingClipID == nil else { return }\n                    viewModel.select(clip)\n                }\n",
 )
 
-# Both timeline navigation and ruler scrubbing must stop while a trim handle owns the touch.
 text = text.replace(
     "                guard movingClipID == nil else { return }\n",
     "                guard movingClipID == nil, trimmingClipID == nil else { return }\n",
@@ -58,8 +58,20 @@ old_trim = '''    private func trimGesture(edge: TrimEdge) -> some Gesture {\n  
 new_trim = '''    private func trimGesture(edge: TrimEdge) -> some Gesture {\n        DragGesture(minimumDistance: 0, coordinateSpace: .global)\n            .onChanged { value in\n                if trimmingClipID != clip.id {\n                    trimmingClipID = clip.id\n                    viewModel.select(clip)\n                }\n\n                switch edge {\n                case .left:\n                    if leftDragOrigin == nil { leftDragOrigin = clip }\n                    guard let origin = leftDragOrigin else { return }\n                    previewLeftTrim(origin: origin, translation: value.translation.width)\n                case .right:\n                    if rightDragOrigin == nil { rightDragOrigin = clip }\n                    guard let origin = rightDragOrigin else { return }\n                    previewRightTrim(origin: origin, translation: value.translation.width)\n                }\n            }\n            .onEnded { _ in\n                leftDragOrigin = nil\n                rightDragOrigin = nil\n                if trimmingClipID == clip.id {\n                    trimmingClipID = nil\n                }\n                viewModel.finishNonRippleTrim()\n            }\n    }\n'''
 replace_once(old_trim, new_trim)
 
-if text == original:
-    print("Trim handle fix already applied")
-else:
+if text != original:
     path.write_text(text)
     print("Applied EditFlow 1.6.2 trim handle fix")
+else:
+    print("Trim handle source fix already applied")
+
+changelog_path = root / "CHANGELOG.md"
+changelog = changelog_path.read_text()
+if "## 1.6.2" not in changelog:
+    entry = '''# Changelog\n\n## 1.6.2\n\n### Fixed\n\n- Left and right clip-edge trim handles now own the drag gesture instead of allowing timeline scrubbing to steal the same touch.\n- Added a dedicated trim interaction state that blocks horizontal scrubbing, vertical track scrolling, and long-press clip movement while an edge handle is active.\n- Trim handles now use a full 44x44-point touch target while keeping the visible edge control compact.\n- Releasing a trim handle immediately returns gesture control to the timeline.\n\n'''
+    if not changelog.startswith("# Changelog\n"):
+        raise SystemExit("Unexpected CHANGELOG header")
+    changelog = entry + changelog[len("# Changelog\n\n"):]
+    changelog_path.write_text(changelog)
+    print("Documented EditFlow 1.6.2")
+else:
+    print("EditFlow 1.6.2 changelog already present")
