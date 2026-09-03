@@ -5,8 +5,12 @@ struct TimelineView: View {
     @ObservedObject var viewModel: EditorViewModel
     @State private var zoom: CGFloat = 78
     @State private var panOriginTime: Double?
+    @State private var verticalOriginOffset: CGFloat?
+    @State private var verticalOffset: CGFloat = 0
+    @State private var panAxis: TimelinePanAxis?
     @State private var snappingEnabled = true
     @State private var movingClipID: UUID?
+    @State private var movePreview: TimelineMovePreview?
 
     private let labelWidth: CGFloat = 44
     private let rowHeight: CGFloat = 50
@@ -32,6 +36,19 @@ struct TimelineView: View {
             }
         }
         .background(Color(red: 0.045, green: 0.045, blue: 0.052))
+        .onChange(of: trackNumbers.count) { _, _ in
+            verticalOffset = min(0, verticalOffset)
+        }
+    }
+
+    private enum TimelinePanAxis {
+        case horizontal
+        case vertical
+    }
+
+    private struct TimelineMovePreview: Equatable {
+        var clipID: UUID
+        var placement: ClipMovePlacement
     }
 
     private var trackNumbers: [Int] {
@@ -52,9 +69,9 @@ struct TimelineView: View {
         return visuals + audios
     }
 
-    private var movingClipLayer: Int? {
-        guard let movingClipID else { return nil }
-        return viewModel.project.clips.first(where: { $0.id == movingClipID })?.layer
+    private var contentHeight: CGFloat {
+        let rows = CGFloat(trackNumbers.count)
+        return rows * rowHeight + max(0, rows - 1) * rowSpacing + 16
     }
 
     private var timelineHeader: some View {
@@ -137,7 +154,7 @@ struct TimelineView: View {
         .frame(height: 28)
         .background(Color(red: 0.052, green: 0.052, blue: 0.06))
         .contentShape(Rectangle())
-        .gesture(timelinePanGesture)
+        .gesture(rulerPanGesture)
     }
 
     private func emptyTimeline(playheadX: CGFloat, height: CGFloat) -> some View {
@@ -153,40 +170,69 @@ struct TimelineView: View {
                 .allowsHitTesting(false)
         }
         .contentShape(Rectangle())
-        .gesture(timelinePanGesture)
+        .gesture(rulerPanGesture)
     }
 
     private func timelineTracks(playheadX: CGFloat, viewportHeight: CGFloat) -> some View {
         ZStack(alignment: .topLeading) {
             Color.clear
                 .contentShape(Rectangle())
-                .gesture(timelinePanGesture)
 
-            ScrollView(.vertical, showsIndicators: trackNumbers.count > 4) {
-                VStack(spacing: rowSpacing) {
-                    ForEach(trackNumbers, id: \.self) { layer in
-                        track(layer, playheadX: playheadX)
-                            .zIndex(movingClipLayer == layer ? 100 : 0)
-                    }
+            VStack(spacing: rowSpacing) {
+                ForEach(trackNumbers, id: \.self) { layer in
+                    track(layer, playheadX: playheadX)
                 }
-                .padding(.vertical, 8)
             }
-            .scrollBounceBehavior(.basedOnSize)
-            .scrollDisabled(movingClipID != nil)
-            .simultaneousGesture(timelinePanGesture)
+            .padding(.vertical, 8)
+            .offset(y: verticalOffset)
+
+            if let guide = movePreview?.placement.snapGuide {
+                let guideX = playheadX + CGFloat(guide - viewModel.playhead) * zoom
+                Rectangle()
+                    .fill(Color.red.opacity(0.9))
+                    .frame(width: 1.5, height: viewportHeight)
+                    .position(x: guideX, y: viewportHeight / 2)
+                    .allowsHitTesting(false)
+            }
 
             fixedPlayhead(x: playheadX, height: viewportHeight)
                 .allowsHitTesting(false)
         }
+        .contentShape(Rectangle())
+        .gesture(timelineNavigationGesture(viewportHeight: viewportHeight))
         .clipped()
     }
 
     private func track(_ layer: Int, playheadX: CGFloat) -> some View {
         ZStack(alignment: .leading) {
             Rectangle()
-                .fill(.white.opacity(0.025))
+                .fill(movePreview?.placement.layer == layer ? Color.red.opacity(0.055) : Color.white.opacity(0.025))
                 .padding(.leading, labelWidth)
                 .allowsHitTesting(false)
+
+            if let preview = movePreview,
+               preview.placement.layer == layer,
+               let clip = viewModel.project.clips.first(where: { $0.id == preview.clipID }) {
+                Rectangle()
+                    .fill(Color.red.opacity(0.10))
+                    .overlay {
+                        Rectangle()
+                            .stroke(
+                                Color.red.opacity(0.8),
+                                style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])
+                            )
+                    }
+                    .frame(
+                        width: max(34, CGFloat(clip.playbackDuration) * zoom),
+                        height: rowHeight - 8
+                    )
+                    .offset(
+                        x: playheadX + CGFloat(preview.placement.timelineStart - viewModel.playhead) * zoom,
+                        y: 4
+                    )
+                    .allowsHitTesting(false)
+                    .zIndex(20)
+            }
 
             ForEach(viewModel.project.clips.filter { $0.layer == layer }) { clip in
                 TimelineClipView(
@@ -197,6 +243,11 @@ struct TimelineView: View {
                     laneOrder: trackNumbers,
                     snappingEnabled: snappingEnabled,
                     movingClipID: $movingClipID,
+                    movePreview: Binding(
+                        get: { movePreview },
+                        set: { movePreview = $0 }
+                    ),
+                    mediaURL: viewModel.mediaURL(for: clip),
                     viewModel: viewModel
                 )
                 .frame(width: max(34, CGFloat(clip.playbackDuration) * zoom), height: rowHeight - 8)
@@ -204,8 +255,12 @@ struct TimelineView: View {
                     x: playheadX + CGFloat(clip.timelineStart - viewModel.playhead) * zoom,
                     y: 4
                 )
-                .onTapGesture { viewModel.select(clip) }
+                .onTapGesture {
+                    guard movingClipID == nil else { return }
+                    viewModel.select(clip)
+                }
                 .accessibilityLabel("\(clip.fileName), \(clip.playbackDuration.formattedDuration)")
+                .zIndex(movingClipID == clip.id ? 1000 : 30)
             }
 
             Rectangle()
@@ -222,7 +277,7 @@ struct TimelineView: View {
                     }
                     .padding(.leading, 6)
                 }
-                .zIndex(200)
+                .zIndex(2000)
         }
         .frame(height: rowHeight)
     }
@@ -241,13 +296,50 @@ struct TimelineView: View {
         .position(x: x, y: max(30, height / 2))
     }
 
-    private var timelinePanGesture: some Gesture {
+    private func timelineNavigationGesture(viewportHeight: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 3)
+            .onChanged { value in
+                guard movingClipID == nil else { return }
+
+                let dx = value.translation.width
+                let dy = value.translation.height
+
+                if panAxis == nil {
+                    guard max(abs(dx), abs(dy)) >= 7 else { return }
+                    if abs(dx) >= abs(dy) {
+                        panAxis = .horizontal
+                        panOriginTime = viewModel.playhead
+                    } else {
+                        panAxis = .vertical
+                        verticalOriginOffset = verticalOffset
+                    }
+                }
+
+                switch panAxis {
+                case .horizontal:
+                    guard let origin = panOriginTime else { return }
+                    let rawTime = origin - Double(dx / zoom)
+                    viewModel.scrubTimeline(to: snappedTime(rawTime))
+                case .vertical:
+                    guard let origin = verticalOriginOffset else { return }
+                    let minimumOffset = min(0, viewportHeight - contentHeight)
+                    verticalOffset = min(0, max(minimumOffset, origin + dy))
+                case .none:
+                    break
+                }
+            }
+            .onEnded { _ in
+                panOriginTime = nil
+                verticalOriginOffset = nil
+                panAxis = nil
+            }
+    }
+
+    private var rulerPanGesture: some Gesture {
         DragGesture(minimumDistance: 2)
             .onChanged { value in
                 guard movingClipID == nil else { return }
-                if panOriginTime == nil {
-                    panOriginTime = viewModel.playhead
-                }
+                if panOriginTime == nil { panOriginTime = viewModel.playhead }
                 guard let origin = panOriginTime else { return }
                 let rawTime = origin - Double(value.translation.width / zoom)
                 viewModel.scrubTimeline(to: snappedTime(rawTime))
@@ -303,29 +395,60 @@ private struct TimelineClipView: View {
     let laneOrder: [Int]
     let snappingEnabled: Bool
     @Binding var movingClipID: UUID?
+    @Binding var movePreview: TimelineView.TimelineMovePreview?
+    let mediaURL: URL
     @ObservedObject var viewModel: EditorViewModel
 
     @State private var leftDragOrigin: MediaClip?
     @State private var rightDragOrigin: MediaClip?
     @State private var isMoving = false
     @State private var moveTranslation: CGSize = .zero
+    @State private var lastSnapGuide: Double?
+    @GestureState private var moveGestureActive = false
 
     var body: some View {
-        HStack(spacing: 5) {
-            Image(systemName: clip.kind.icon)
-            Text(clip.fileName)
-                .lineLimit(1)
-            if clip.speedPoints != SpeedPoint.linear {
-                Image(systemName: "gauge.with.dots.needle.67percent")
+        ZStack(alignment: .bottomLeading) {
+            clipVisual
+
+            if clip.kind != .audio {
+                LinearGradient(
+                    colors: [.clear, .black.opacity(0.72)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .allowsHitTesting(false)
             }
+
+            HStack(spacing: 4) {
+                Image(systemName: clip.kind.icon)
+                Text(clip.fileName)
+                    .lineLimit(1)
+                if clip.speedPoints != SpeedPoint.linear {
+                    Image(systemName: "gauge.with.dots.needle.67percent")
+                }
+            }
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(.white)
+            .shadow(color: .black.opacity(0.8), radius: 2)
+            .padding(.horizontal, selected ? 13 : 5)
+            .padding(.bottom, 3)
         }
-        .font(.caption2)
-        .padding(.horizontal, selected ? 14 : 8)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .background(clipColor, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+        .background(clipColor)
+        .clipShape(Rectangle())
         .overlay {
-            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                .stroke(selected ? Color.white : Color.white.opacity(0.08), lineWidth: selected ? 2 : 1)
+            Rectangle()
+                .stroke(
+                    isMoving ? Color.red : (selected ? Color.white : Color.white.opacity(0.14)),
+                    lineWidth: isMoving ? 2.5 : (selected ? 2 : 1)
+                )
+        }
+        .overlay {
+            if isMoving {
+                Rectangle()
+                    .stroke(Color.red.opacity(0.55), lineWidth: 4)
+                    .blur(radius: 4)
+                    .allowsHitTesting(false)
+            }
         }
         .overlay(alignment: .leading) {
             if selected && !isMoving {
@@ -340,21 +463,30 @@ private struct TimelineClipView: View {
             }
         }
         .overlay(alignment: .topTrailing) {
-            if isMoving {
-                Text(targetTrackName)
+            if isMoving, let placement = movePreview?.placement {
+                Text(trackName(placement.layer))
                     .font(.caption2.monospaced().weight(.bold))
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
-                    .background(.black.opacity(0.7), in: Capsule())
-                    .padding(4)
+                    .background(.black.opacity(0.75), in: Capsule())
+                    .padding(3)
             }
         }
-        .scaleEffect(isMoving ? 1.035 : 1)
-        .shadow(color: .black.opacity(isMoving ? 0.45 : 0), radius: 10, y: 5)
         .offset(isMoving ? moveTranslation : .zero)
         .zIndex(isMoving ? 1000 : 0)
         .simultaneousGesture(clipMoveGesture)
-        .animation(.easeOut(duration: 0.12), value: isMoving)
+        .onChange(of: moveGestureActive) { _, active in
+            if !active, isMoving {
+                resetMoveState()
+            }
+        }
+        .onChange(of: movingClipID) { _, id in
+            if id != clip.id, isMoving {
+                isMoving = false
+                moveTranslation = .zero
+                lastSnapGuide = nil
+            }
+        }
     }
 
     private enum TrimEdge {
@@ -362,8 +494,36 @@ private struct TimelineClipView: View {
         case right
     }
 
+    @ViewBuilder
+    private var clipVisual: some View {
+        GeometryReader { proxy in
+            switch clip.kind {
+            case .video:
+                TimelineThumbnailStrip(
+                    clip: clip,
+                    url: mediaURL,
+                    width: proxy.size.width,
+                    height: proxy.size.height
+                )
+            case .image:
+                if let image = UIImage(contentsOfFile: mediaURL.path) {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: proxy.size.width, height: proxy.size.height)
+                        .clipped()
+                } else {
+                    Rectangle().fill(clipColor)
+                }
+            case .audio:
+                TimelineWaveformPlaceholder()
+                    .padding(.horizontal, 4)
+            }
+        }
+    }
+
     private func trimHandle(edge: TrimEdge) -> some View {
-        RoundedRectangle(cornerRadius: 4, style: .continuous)
+        Rectangle()
             .fill(handleColor)
             .frame(width: 14, height: 36)
             .overlay {
@@ -377,34 +537,39 @@ private struct TimelineClipView: View {
     }
 
     private var clipMoveGesture: some Gesture {
-        LongPressGesture(minimumDuration: 0.38, maximumDistance: 12)
+        LongPressGesture(minimumDuration: 0.40, maximumDistance: 12)
             .sequenced(before: DragGesture(minimumDistance: 0))
+            .updating($moveGestureActive) { value, state, _ in
+                switch value {
+                case .first(true), .second(true, _):
+                    state = true
+                default:
+                    state = false
+                }
+            }
             .onChanged { value in
                 switch value {
                 case .first(true):
                     activateMoveIfNeeded()
                 case .second(true, let dragValue):
                     activateMoveIfNeeded()
-                    if let dragValue {
-                        moveTranslation = dragValue.translation
-                    }
+                    guard let dragValue else { return }
+                    updateMove(with: dragValue.translation)
                 default:
                     break
                 }
             }
             .onEnded { value in
-                defer { resetMoveState() }
-                guard case .second(true, let dragValue) = value,
-                      let dragValue else { return }
+                var finalPlacement: ClipMovePlacement?
+                if case .second(true, let dragValue) = value,
+                   let dragValue {
+                    finalPlacement = placement(for: dragValue.translation)
+                }
 
-                let rawStart = clip.timelineStart + Double(dragValue.translation.width / zoom)
-                let targetLayer = moveTargetLayer(for: dragValue.translation.height)
-                viewModel.moveClip(
-                    id: clip.id,
-                    to: rawStart,
-                    layer: targetLayer,
-                    snappingEnabled: snappingEnabled
-                )
+                if let finalPlacement {
+                    viewModel.commitClipMove(id: clip.id, placement: finalPlacement)
+                }
+                resetMoveState()
             }
     }
 
@@ -416,11 +581,41 @@ private struct TimelineClipView: View {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
 
+    private func updateMove(with rawTranslation: CGSize) {
+        guard let placement = placement(for: rawTranslation) else { return }
+        movePreview = TimelineView.TimelineMovePreview(clipID: clip.id, placement: placement)
+
+        let snappedX = CGFloat(placement.timelineStart - clip.timelineStart) * zoom
+        moveTranslation = CGSize(width: snappedX, height: rawTranslation.height)
+
+        if placement.snapGuide != lastSnapGuide {
+            if placement.snapGuide != nil {
+                UISelectionFeedbackGenerator().selectionChanged()
+            }
+            lastSnapGuide = placement.snapGuide
+        }
+    }
+
+    private func placement(for rawTranslation: CGSize) -> ClipMovePlacement? {
+        let rawStart = clip.timelineStart + Double(rawTranslation.width / zoom)
+        let targetLayer = moveTargetLayer(for: rawTranslation.height)
+        return viewModel.previewClipMove(
+            id: clip.id,
+            proposedStart: rawStart,
+            requestedLayer: targetLayer,
+            snappingEnabled: snappingEnabled
+        )
+    }
+
     private func resetMoveState() {
         isMoving = false
         moveTranslation = .zero
+        lastSnapGuide = nil
         if movingClipID == clip.id {
             movingClipID = nil
+        }
+        if movePreview?.clipID == clip.id {
+            movePreview = nil
         }
     }
 
@@ -438,8 +633,7 @@ private struct TimelineClipView: View {
         return validLanes[targetIndex]
     }
 
-    private var targetTrackName: String {
-        let layer = moveTargetLayer(for: moveTranslation.height)
+    private func trackName(_ layer: Int) -> String {
         if layer >= EditorViewModel.audioLayerBase {
             return "A\(layer - EditorViewModel.audioLayerBase + 1)"
         }
@@ -499,9 +693,78 @@ private struct TimelineClipView: View {
 
     private var clipColor: Color {
         switch clip.kind {
-        case .video: Color(red: 0.28, green: 0.34, blue: 0.46)
-        case .image: Color(red: 0.20, green: 0.42, blue: 0.44)
-        case .audio: Color(red: 0.17, green: 0.40, blue: 0.28)
+        case .video: Color(red: 0.16, green: 0.18, blue: 0.22)
+        case .image: Color(red: 0.15, green: 0.32, blue: 0.34)
+        case .audio: Color(red: 0.12, green: 0.34, blue: 0.22)
+        }
+    }
+}
+
+private struct TimelineThumbnailStrip: View {
+    let clip: MediaClip
+    let url: URL
+    let width: CGFloat
+    let height: CGFloat
+
+    @State private var images: [UIImage] = []
+
+    private var count: Int {
+        min(16, max(1, Int(ceil(width / 52))))
+    }
+
+    private var requestKey: String {
+        "\(clip.id.uuidString)-\(String(format: "%.3f", clip.trimStart))-\(String(format: "%.3f", clip.trimEnd))-\(count)-\(Int(height))"
+    }
+
+    var body: some View {
+        HStack(spacing: 1) {
+            if images.isEmpty {
+                Rectangle()
+                    .fill(Color.white.opacity(0.04))
+                    .overlay {
+                        Image(systemName: "film")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.28))
+                    }
+            } else {
+                ForEach(Array(images.enumerated()), id: \.offset) { _, image in
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: max(1, width / CGFloat(images.count)), height: height)
+                        .clipped()
+                }
+            }
+        }
+        .frame(width: width, height: height)
+        .clipped()
+        .task(id: requestKey) {
+            images = await TimelineThumbnailService.shared.thumbnails(
+                for: clip,
+                url: url,
+                count: count,
+                pixelHeight: height * UIScreen.main.scale
+            )
+        }
+    }
+}
+
+private struct TimelineWaveformPlaceholder: View {
+    var body: some View {
+        Canvas { context, size in
+            let centerY = size.height / 2
+            var x: CGFloat = 1
+            var index: CGFloat = 0
+            while x < size.width {
+                let phase = sin(index * 0.72) * 0.45 + cos(index * 0.31) * 0.25
+                let amplitude = max(3, abs(phase) * size.height * 0.40)
+                var path = Path()
+                path.move(to: CGPoint(x: x, y: centerY - amplitude))
+                path.addLine(to: CGPoint(x: x, y: centerY + amplitude))
+                context.stroke(path, with: .color(.white.opacity(0.58)), lineWidth: 1.2)
+                x += 3
+                index += 1
+            }
         }
     }
 }
