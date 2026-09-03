@@ -13,10 +13,65 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
+  apply-1-6-4:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.patch.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+      - name: Apply 1.6.4 long-press timing fix
+        id: patch
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          timeline = Path('EditFlow/EditFlow/Views/Editor/TimelineView.swift')
+          text = timeline.read_text()
+          if 'LongPressGesture(minimumDuration: 0.40, maximumDistance: 12)' in text:
+              text = text.replace(
+                  'LongPressGesture(minimumDuration: 0.40, maximumDistance: 12)',
+                  'LongPressGesture(minimumDuration: 0.80, maximumDistance: 12)',
+                  1,
+              )
+              timeline.write_text(text)
+
+          project = Path('EditFlow/project.yml')
+          text = project.read_text()
+          text = text.replace('MARKETING_VERSION: 1.6.3', 'MARKETING_VERSION: 1.6.4')
+          text = text.replace('CURRENT_PROJECT_VERSION: 12', 'CURRENT_PROJECT_VERSION: 13')
+          project.write_text(text)
+
+          changelog = Path('EditFlow/CHANGELOG.md')
+          text = changelog.read_text()
+          header = '''## 1.6.4\n\n### Fixed\n\n- Increased clip long-press move activation from 0.4 seconds to 0.8 seconds so edge trimming gets clear touch priority and accidental clip movement is avoided.\n\n'''
+          if '## 1.6.4' not in text:
+              if text.startswith('# Changelog\n\n'):
+                  text = '# Changelog\n\n' + header + text[len('# Changelog\n\n'):]
+              else:
+                  text = header + text
+              changelog.write_text(text)
+          PY
+
+          if git diff --quiet -- EditFlow/EditFlow/Views/Editor/TimelineView.swift EditFlow/project.yml EditFlow/CHANGELOG.md; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add EditFlow/EditFlow/Views/Editor/TimelineView.swift EditFlow/project.yml EditFlow/CHANGELOG.md
+          git commit -m "Set EditFlow clip long press to 0.8 seconds"
+          git push
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
   test:
+    needs: apply-1-6-4
+    if: needs.apply-1-6-4.outputs.changed != 'true'
     runs-on: macos-15
     timeout-minutes: 20
     steps:
@@ -66,6 +121,8 @@ jobs:
             test
 
   unsigned-ipa:
+    needs: apply-1-6-4
+    if: needs.apply-1-6-4.outputs.changed != 'true'
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -97,9 +154,9 @@ jobs:
           mkdir -p "$RUNNER_TEMP/Payload"
           cp -R "$APP_PATH" "$RUNNER_TEMP/Payload/"
           cd "$RUNNER_TEMP"
-          zip -qry EditFlow-1.6.3-unsigned.ipa Payload
+          zip -qry EditFlow-1.6.4-unsigned.ipa Payload
       - uses: actions/upload-artifact@v4
         with:
-          name: EditFlow-1.6.3-unsigned-IPA
-          path: ${{ runner.temp }}/EditFlow-1.6.3-unsigned.ipa
+          name: EditFlow-1.6.4-unsigned-IPA
+          path: ${{ runner.temp }}/EditFlow-1.6.4-unsigned.ipa
           if-no-files-found: error
