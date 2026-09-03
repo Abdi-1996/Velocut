@@ -6,8 +6,8 @@ options:
   createIntermediateGroups: true
 settings:
   base:
-    MARKETING_VERSION: 1.5.0
-    CURRENT_PROJECT_VERSION: 8
+    MARKETING_VERSION: 1.6.0
+    CURRENT_PROJECT_VERSION: 9
     SWIFT_VERSION: 5.10
     TARGETED_DEVICE_FAMILY: "1,2"
     SUPPORTS_MACCATALYST: NO
@@ -26,7 +26,7 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: EditFlow
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.photo-video
-        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: EditFlow uses your library to import clips and photos into projects.
+        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: EditFlow uses your library to import clips, photos, and video audio into projects.
         INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: EditFlow saves finished edits to your photo library.
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
