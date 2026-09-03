@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.6.8
+
+### Fixed
+
+- Replaced the two independent 44-point trim touch targets with one unified edge interaction layer for the selected clip.
+- Left and right trim hit regions are dynamically limited to at most half the current clip width, so they can never overlap on short clips.
+- The trim edge is locked from the initial touch position: the left half can only change trimStart and the right half can only change trimEnd until the finger is released.
+- Timeline filmstrip thumbnails now follow the live displayClip during trimming, so trimming the beginning immediately shows the new first frames instead of visually looking like an end trim.
+- Kept immediate touch-down ownership, magnetic snapping, haptic feedback, speed-ramp duration mapping, and the 0.8-second center long-press move gesture.
+
 ## 1.6.7
 
 ### Fixed
