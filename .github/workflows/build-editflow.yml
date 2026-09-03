@@ -13,93 +13,444 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  test:
-    runs-on: macos-15
-    timeout-minutes: 20
+  apply-1-6-7:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
-      - name: Generate project
-        run: |
-          brew install xcodegen
-          cd EditFlow
-          xcodegen generate
-      - name: Build for simulator
-        run: |
-          cd EditFlow
-          xcodebuild \
-            -project EditFlow.xcodeproj \
-            -scheme EditFlow \
-            -sdk iphonesimulator \
-            -destination 'generic/platform=iOS Simulator' \
-            CODE_SIGNING_ALLOWED=NO \
-            build
-      - name: Detect available simulator
-        id: simulator
-        run: |
-          DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; data=json.load(sys.stdin); print(next((d["udid"] for devices in data["devices"].values() for d in devices if d.get("isAvailable") and "iPhone" in d.get("name", "")), ""))')
-          echo "device_id=$DEVICE_ID" >> "$GITHUB_OUTPUT"
-      - name: Boot simulator
-        if: steps.simulator.outputs.device_id != ''
-        env:
-          DEVICE_ID: ${{ steps.simulator.outputs.device_id }}
-        run: |
-          xcrun simctl boot "$DEVICE_ID" 2>/dev/null || true
-          xcrun simctl bootstatus "$DEVICE_ID" -b
-      - name: Run unit tests
-        if: steps.simulator.outputs.device_id != ''
-        env:
-          DEVICE_ID: ${{ steps.simulator.outputs.device_id }}
-        run: |
-          cd EditFlow
-          xcodebuild \
-            -project EditFlow.xcodeproj \
-            -scheme EditFlow \
-            -sdk iphonesimulator \
-            -destination "platform=iOS Simulator,id=$DEVICE_ID" \
-            -parallel-testing-enabled NO \
-            CODE_SIGNING_ALLOWED=NO \
-            test
-
-  unsigned-ipa:
-    runs-on: macos-15
-    steps:
-      - uses: actions/checkout@v4
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
-      - name: Generate project
-        run: |
-          brew install xcodegen
-          cd EditFlow
-          xcodegen generate
-      - name: Build unsigned device app
-        run: |
-          cd EditFlow
-          xcodebuild \
-            -project EditFlow.xcodeproj \
-            -scheme EditFlow \
-            -configuration Release \
-            -sdk iphoneos \
-            -destination 'generic/platform=iOS' \
-            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            build
-      - name: Package unsigned IPA
-        run: |
-          APP_PATH=$(find "$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos" -maxdepth 1 -name '*.app' -print -quit)
-          test -n "$APP_PATH"
-          mkdir -p "$RUNNER_TEMP/Payload"
-          cp -R "$APP_PATH" "$RUNNER_TEMP/Payload/"
-          cd "$RUNNER_TEMP"
-          zip -qry EditFlow-1.6.6-unsigned.ipa Payload
-      - uses: actions/upload-artifact@v4
         with:
-          name: EditFlow-1.6.6-unsigned-IPA
-          path: ${{ runner.temp }}/EditFlow-1.6.6-unsigned.ipa
-          if-no-files-found: error
+          ref: ${{ github.ref_name }}
+      - name: Apply external timeline trim controls
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          timeline_path = Path('EditFlow/EditFlow/Views/Editor/TimelineView.swift')
+          text = timeline_path.read_text()
+          project_path = Path('EditFlow/project.yml')
+          project = project_path.read_text()
+
+          already_done = (
+              'private struct TimelineExternalTrimHandle: View' in text
+              and 'MARKETING_VERSION: 1.6.7' in project
+          )
+
+          if not already_done:
+              internal_handles = '''        .overlay(alignment: .leading) {
+            if selected && !isMoving {
+                trimHandle(edge: .left)
+            }
+        }
+        .overlay(alignment: .trailing) {
+            if selected && !isMoving {
+                trimHandle(edge: .right)
+            }
+        }
+'''
+              if internal_handles not in text:
+                  raise SystemExit('Could not locate internal trim overlays')
+              text = text.replace(internal_handles, '', 1)
+
+              clip_anchor = '''                .zIndex(
+                    movingClipID == sourceClip.id || trimmingClipID == sourceClip.id
+                        ? 1000
+                        : 30
+                )
+'''
+              external_handles = '''
+
+                if viewModel.selectedClipID == sourceClip.id,
+                   movingClipID != sourceClip.id {
+                    TimelineExternalTrimHandle(
+                        edge: .left,
+                        sourceClip: sourceClip,
+                        zoom: zoom,
+                        snappingEnabled: snappingEnabled,
+                        trimmingClipID: $trimmingClipID,
+                        trimPreviewClip: $trimPreviewClip,
+                        trimSnapGuide: $trimSnapGuide,
+                        viewModel: viewModel
+                    )
+                    .frame(width: 44, height: 44)
+                    .offset(
+                        x: playheadX + CGFloat(displayClip.timelineStart - viewModel.playhead) * zoom - 22,
+                        y: 3
+                    )
+                    .zIndex(6000)
+
+                    TimelineExternalTrimHandle(
+                        edge: .right,
+                        sourceClip: sourceClip,
+                        zoom: zoom,
+                        snappingEnabled: snappingEnabled,
+                        trimmingClipID: $trimmingClipID,
+                        trimPreviewClip: $trimPreviewClip,
+                        trimSnapGuide: $trimSnapGuide,
+                        viewModel: viewModel
+                    )
+                    .frame(width: 44, height: 44)
+                    .offset(
+                        x: playheadX + CGFloat(displayClip.timelineEnd - viewModel.playhead) * zoom - 22,
+                        y: 3
+                    )
+                    .zIndex(6000)
+                }
+'''
+              if clip_anchor not in text:
+                  raise SystemExit('Could not locate clip zIndex anchor')
+              text = text.replace(clip_anchor, clip_anchor + external_handles, 1)
+
+              struct_anchor = 'private struct EdgeTrimPanCaptureView: UIViewRepresentable {'
+              if struct_anchor not in text:
+                  raise SystemExit('Could not locate edge capture view')
+
+              external_struct = r'''private struct TimelineExternalTrimHandle: View {
+    enum Edge {
+        case left
+        case right
+    }
+
+    let edge: Edge
+    let sourceClip: MediaClip
+    let zoom: CGFloat
+    let snappingEnabled: Bool
+
+    @Binding var trimmingClipID: UUID?
+    @Binding var trimPreviewClip: MediaClip?
+    @Binding var trimSnapGuide: Double?
+
+    @ObservedObject var viewModel: EditorViewModel
+
+    @State private var trimOrigin: MediaClip?
+    @State private var lastSnapGuide: Double?
+
+    var body: some View {
+        ZStack {
+            EdgeTrimPanCaptureView(
+                onBegan: beginTrim,
+                onChanged: updateTrim,
+                onEnded: endTrim
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            Rectangle()
+                .fill(handleColor)
+                .frame(width: 15, height: 38)
+                .overlay {
+                    Capsule()
+                        .fill(.white.opacity(0.96))
+                        .frame(width: 2.5, height: 20)
+                }
+                .allowsHitTesting(false)
+        }
+        .contentShape(Rectangle())
+        .transaction { transaction in
+            transaction.animation = nil
+        }
+        .accessibilityLabel(edge == .left ? "Обрезать начало клипа" : "Обрезать конец клипа")
+    }
+
+    private func beginTrim() {
+        guard trimmingClipID == nil || trimmingClipID == sourceClip.id else { return }
+
+        trimOrigin = sourceClip
+        trimmingClipID = sourceClip.id
+        trimPreviewClip = sourceClip
+        trimSnapGuide = nil
+        lastSnapGuide = nil
+
+        viewModel.select(sourceClip)
+        viewModel.pausePlayback()
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+
+    private func updateTrim(_ deltaX: CGFloat) {
+        guard trimmingClipID == sourceClip.id,
+              let origin = trimOrigin else { return }
+
+        let result = resolvedTrim(origin: origin, deltaX: deltaX)
+        trimPreviewClip = result.clip
+        trimSnapGuide = result.guide
+
+        if result.guide != lastSnapGuide {
+            if result.guide != nil {
+                UISelectionFeedbackGenerator().selectionChanged()
+            }
+            lastSnapGuide = result.guide
+        }
+    }
+
+    private func endTrim() {
+        guard trimmingClipID == sourceClip.id else {
+            resetState()
+            return
+        }
+
+        viewModel.commitNonRippleTrim(trimPreviewClip ?? sourceClip)
+        resetState()
+    }
+
+    private func resetState() {
+        trimOrigin = nil
+        lastSnapGuide = nil
+
+        if trimmingClipID == sourceClip.id {
+            trimmingClipID = nil
+        }
+        if trimPreviewClip?.id == sourceClip.id {
+            trimPreviewClip = nil
+        }
+        trimSnapGuide = nil
+    }
+
+    private func resolvedTrim(
+        origin: MediaClip,
+        deltaX: CGFloat
+    ) -> (clip: MediaClip, guide: Double?) {
+        let timelineDelta = Double(deltaX / max(1, zoom))
+
+        switch edge {
+        case .left:
+            var shortest = origin
+            shortest.trimStart = max(0, origin.trimEnd - 0.05)
+
+            var longest = origin
+            longest.trimStart = 0
+
+            let minimumBoundary = origin.timelineEnd - longest.playbackDuration
+            let maximumBoundary = origin.timelineEnd - shortest.playbackDuration
+            let proposedBoundary = origin.timelineStart + timelineDelta
+            let snapped = snappedBoundary(
+                proposed: proposedBoundary,
+                minimum: minimumBoundary,
+                maximum: maximumBoundary
+            )
+
+            let targetDuration = origin.timelineEnd - snapped.boundary
+            var resolved = origin
+            resolved.trimStart = trimStart(
+                forPlaybackDuration: targetDuration,
+                origin: origin
+            )
+            resolved.timelineStart = origin.timelineEnd - resolved.playbackDuration
+            return (resolved, snapped.guide)
+
+        case .right:
+            var shortest = origin
+            shortest.trimEnd = min(origin.sourceDuration, origin.trimStart + 0.05)
+
+            var longest = origin
+            longest.trimEnd = origin.sourceDuration
+
+            let minimumBoundary = origin.timelineStart + shortest.playbackDuration
+            let maximumBoundary = origin.timelineStart + longest.playbackDuration
+            let proposedBoundary = origin.timelineEnd + timelineDelta
+            let snapped = snappedBoundary(
+                proposed: proposedBoundary,
+                minimum: minimumBoundary,
+                maximum: maximumBoundary
+            )
+
+            let targetDuration = snapped.boundary - origin.timelineStart
+            var resolved = origin
+            resolved.trimEnd = trimEnd(
+                forPlaybackDuration: targetDuration,
+                origin: origin
+            )
+            resolved.timelineStart = origin.timelineStart
+            return (resolved, snapped.guide)
+        }
+    }
+
+    private func snappedBoundary(
+        proposed: Double,
+        minimum: Double,
+        maximum: Double
+    ) -> (boundary: Double, guide: Double?) {
+        let clamped = min(max(minimum, proposed), maximum)
+        guard snappingEnabled else { return (clamped, nil) }
+
+        let compatible = viewModel.project.clips.filter {
+            guard $0.id != sourceClip.id else { return false }
+            return sourceClip.kind == .audio ? $0.kind == .audio : $0.kind != .audio
+        }
+
+        let sameLayerTargets = compatible
+            .filter { $0.layer == sourceClip.layer }
+            .flatMap { [$0.timelineStart, $0.timelineEnd] }
+        let otherTargets = compatible
+            .filter { $0.layer != sourceClip.layer }
+            .flatMap { [$0.timelineStart, $0.timelineEnd] }
+
+        let threshold = min(0.20, max(0.04, Double(12 / max(1, zoom))))
+
+        if let nearest = sameLayerTargets.min(by: { abs($0 - clamped) < abs($1 - clamped) }),
+           abs(nearest - clamped) <= threshold,
+           nearest >= minimum,
+           nearest <= maximum {
+            return (nearest, nearest)
+        }
+
+        if let nearest = otherTargets.min(by: { abs($0 - clamped) < abs($1 - clamped) }),
+           abs(nearest - clamped) <= threshold,
+           nearest >= minimum,
+           nearest <= maximum {
+            return (nearest, nearest)
+        }
+
+        return (clamped, nil)
+    }
+
+    private func trimStart(
+        forPlaybackDuration target: Double,
+        origin: MediaClip
+    ) -> Double {
+        var low = 0.0
+        var high = max(0, origin.trimEnd - 0.05)
+
+        for _ in 0..<24 {
+            let middle = (low + high) * 0.5
+            var candidate = origin
+            candidate.trimStart = middle
+            if candidate.playbackDuration > target {
+                low = middle
+            } else {
+                high = middle
+            }
+        }
+
+        return min(max(0, (low + high) * 0.5), origin.trimEnd - 0.05)
+    }
+
+    private func trimEnd(
+        forPlaybackDuration target: Double,
+        origin: MediaClip
+    ) -> Double {
+        var low = min(origin.sourceDuration, origin.trimStart + 0.05)
+        var high = origin.sourceDuration
+
+        for _ in 0..<24 {
+            let middle = (low + high) * 0.5
+            var candidate = origin
+            candidate.trimEnd = middle
+            if candidate.playbackDuration < target {
+                low = middle
+            } else {
+                high = middle
+            }
+        }
+
+        return max(origin.trimStart + 0.05, min(origin.sourceDuration, (low + high) * 0.5))
+    }
+
+    private var handleColor: Color {
+        switch sourceClip.kind {
+        case .video: .blue
+        case .image: .teal
+        case .audio: .green
+        }
+    }
+}
+
+'''
+              text = text.replace(struct_anchor, external_struct + struct_anchor, 1)
+
+              text = text.replace(
+                  'let recognizer = EdgeTrimPanGestureRecognizer(',
+                  'let recognizer = EdgeTrimImmediateDragRecognizer(',
+                  1
+              )
+              text = text.replace(
+                  'func handlePan(_ recognizer: UIPanGestureRecognizer) {\n            let translation = recognizer.translation(in: recognizer.view?.window)',
+                  'func handlePan(_ recognizer: EdgeTrimImmediateDragRecognizer) {\n            let translationX = recognizer.translationX',
+                  1
+              )
+              text = text.replace('onChanged(translation.x)', 'onChanged(translationX)')
+
+              old_recognizer = '''private final class EdgeTrimPanGestureRecognizer: UIPanGestureRecognizer {
+    override func canPrevent(_ preventedGestureRecognizer: UIGestureRecognizer) -> Bool {
+        true
+    }
+
+    override func canBePrevented(by preventingGestureRecognizer: UIGestureRecognizer) -> Bool {
+        false
+    }
+}
+'''
+              new_recognizer = '''private final class EdgeTrimImmediateDragRecognizer: UIGestureRecognizer {
+    private var startX: CGFloat?
+    private(set) var translationX: CGFloat = 0
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        guard state == .possible, touches.count == 1, let touch = touches.first else {
+            state = .failed
+            return
+        }
+
+        startX = touch.location(in: view?.window).x
+        translationX = 0
+        state = .began
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+        guard let startX, let touch = touches.first else { return }
+        translationX = touch.location(in: view?.window).x - startX
+        state = .changed
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+        if let startX, let touch = touches.first {
+            translationX = touch.location(in: view?.window).x - startX
+        }
+        state = .ended
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+        state = .cancelled
+    }
+
+    override func reset() {
+        startX = nil
+        translationX = 0
+        super.reset()
+    }
+
+    override func canPrevent(_ preventedGestureRecognizer: UIGestureRecognizer) -> Bool {
+        true
+    }
+
+    override func canBePrevented(by preventingGestureRecognizer: UIGestureRecognizer) -> Bool {
+        false
+    }
+}
+'''
+              if old_recognizer not in text:
+                  raise SystemExit('Could not locate old edge recognizer')
+              text = text.replace(old_recognizer, new_recognizer, 1)
+
+              timeline_path.write_text(text)
+
+              project = project.replace('MARKETING_VERSION: 1.6.6', 'MARKETING_VERSION: 1.6.7')
+              project = project.replace('CURRENT_PROJECT_VERSION: 15', 'CURRENT_PROJECT_VERSION: 16')
+              project_path.write_text(project)
+
+              changelog_path = Path('EditFlow/CHANGELOG.md')
+              changelog = changelog_path.read_text()
+              header = '''## 1.6.7\n\n### Fixed\n\n- Removed the selected clip trim handles from inside TimelineClipView and moved them to a dedicated top-level interaction layer on each timeline track.\n- Edge trim controls now sit above clip tap, long-press movement, track labels, and timeline scrubbing layers so their touch area is no longer covered by SwiftUI overlays.\n- Replaced the threshold-based edge pan with an immediate custom UIGestureRecognizer that enters Trim on touch-down and owns the finger until release.\n- Left and right trim handles update the visual clip boundary continuously and commit the final trim once on release.\n- Magnetic snapping and haptic feedback remain available, including accurate boundary resolution for speed-ramped clips.\n\n'''
+              if '## 1.6.7' not in changelog:
+                  changelog = changelog.replace('# Changelog\n\n', '# Changelog\n\n' + header, 1)
+                  changelog_path.write_text(changelog)
+
+          PY
+
+          if git diff --quiet -- EditFlow/EditFlow/Views/Editor/TimelineView.swift EditFlow/project.yml EditFlow/CHANGELOG.md; then
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add EditFlow/EditFlow/Views/Editor/TimelineView.swift EditFlow/project.yml EditFlow/CHANGELOG.md
+          git commit -m "Move trim controls above timeline interactions"
+          git push
