@@ -45,10 +45,6 @@ final class EditorViewModel: ObservableObject {
     private var resumePlaybackAfterPreviewBuild = false
     private var trimSessionOrigin: MediaClip?
     private var lastTrimSnapGuide: Double?
-    private var trimSessionOrigin: MediaClip?
-    private var lastTrimSnapGuide: Double?
-    private var trimSessionOrigin: MediaClip?
-    private var lastTrimSnapGuide: Double?
 
     init(project: EditProject, store: ProjectStore) {
         self.store = store
