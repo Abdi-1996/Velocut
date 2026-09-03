@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.6.0
+
+### Added
+
+- Added `Аудио → Из видео` to choose videos directly from the iPhone/iPad photo library.
+- Selected videos are processed locally and their audio tracks are extracted to M4A before being added to the A1 timeline.
+- Multiple gallery videos can be selected and converted to audio in one import operation.
+- Added a dedicated progress state while audio is being extracted from gallery video.
+
+### Fixed
+
+- Long-press move mode now keeps the clip at its exact timeline width and height for the entire drag.
+- Removed the blurred move glow that visually made the clip look larger while dragging.
+- Move highlighting is now drawn inside the clip bounds with no scaling or implicit size animation.
+
+### Changed
+
+- Audio extraction is performed locally with AVFoundation and does not require an internet connection.
+- Videos without an audio track now show a clear extraction error instead of adding an empty clip.
+
 ## 1.5.0
 
 ### Added
