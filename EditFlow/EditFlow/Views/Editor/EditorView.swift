@@ -286,18 +286,40 @@ private struct PreviewMediaSurface: View {
     let imagePadding: CGFloat
 
     var body: some View {
-        Group {
-            if let clip = viewModel.previewClip,
-               clip.kind == .image,
-               let image = UIImage(contentsOfFile: viewModel.mediaURL(for: clip).path) {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFit()
-                    .padding(imagePadding)
-            } else if viewModel.player.currentItem == nil {
-                EmptyPreview()
-            } else {
-                PlayerContainer(player: viewModel.player)
+        ZStack {
+            Group {
+                if let trimImage = viewModel.trimPreviewImage {
+                    Image(uiImage: trimImage)
+                        .resizable()
+                        .scaledToFit()
+                        .padding(imagePadding)
+                } else if let clip = viewModel.previewClip,
+                          clip.kind == .image,
+                          let image = UIImage(contentsOfFile: viewModel.mediaURL(for: clip).path) {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .padding(imagePadding)
+                } else if viewModel.player.currentItem == nil {
+                    EmptyPreview()
+                } else {
+                    PlayerContainer(player: viewModel.player)
+                }
+            }
+
+            if let trimTime = viewModel.trimPreviewSourceTime,
+               viewModel.trimPreviewImage != nil {
+                VStack {
+                    Spacer()
+                    Text("TRIM  \(trimTime.formattedDuration)")
+                        .font(.caption2.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(.black.opacity(0.62), in: Capsule())
+                        .padding(.bottom, 10)
+                }
+                .allowsHitTesting(false)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -3,6 +3,7 @@ import Foundation
 import Photos
 import PhotosUI
 import SwiftUI
+import UIKit
 
 struct ClipMovePlacement: Equatable {
     var timelineStart: Double
@@ -29,6 +30,8 @@ final class EditorViewModel: ObservableObject {
     @Published var showingSpeedRamp = false
     @Published var showingClipTools = false
     @Published var showingExport = false
+    @Published private(set) var trimPreviewImage: UIImage?
+    @Published private(set) var trimPreviewSourceTime: Double?
 
     private let store: ProjectStore
     private let importer = MediaImportService()
@@ -45,6 +48,8 @@ final class EditorViewModel: ObservableObject {
     private var resumePlaybackAfterPreviewBuild = false
     private var trimSessionOrigin: MediaClip?
     private var lastTrimSnapGuide: Double?
+    private var trimPreviewFrameTask: Task<Void, Never>?
+    private var trimPreviewFrameGeneration = 0
 
     init(project: EditProject, store: ProjectStore) {
         self.store = store
@@ -72,6 +77,8 @@ final class EditorViewModel: ObservableObject {
 
     deinit {
         previewBuildTask?.cancel()
+        trimPreviewFrameTask?.cancel()
+        TrimPreviewFrameService.shared.cancelPendingRequest()
         if let endObserver {
             NotificationCenter.default.removeObserver(endObserver)
         }
@@ -93,6 +100,62 @@ final class EditorViewModel: ObservableObject {
 
     func mediaURL(for clip: MediaClip) -> URL {
         store.projectDirectory(project.id).appendingPathComponent(clip.relativePath)
+    }
+
+    func updateTrimPreviewFrame(for clip: MediaClip, showingStart: Bool) {
+        pausePlayback()
+
+        trimPreviewFrameTask?.cancel()
+        trimPreviewFrameGeneration += 1
+        let generation = trimPreviewFrameGeneration
+
+        guard clip.kind == .video else {
+            TrimPreviewFrameService.shared.cancelPendingRequest()
+            trimPreviewImage = nil
+            trimPreviewSourceTime = nil
+            return
+        }
+
+        let sourceFrame = 1 / Double(max(1, project.frameRate))
+        let sourceTime: Double
+        if showingStart {
+            sourceTime = min(max(0, clip.trimStart), clip.sourceDuration)
+        } else {
+            sourceTime = max(
+                clip.trimStart,
+                min(clip.sourceDuration, clip.trimEnd - sourceFrame)
+            )
+        }
+
+        trimPreviewSourceTime = sourceTime
+        let url = mediaURL(for: clip)
+
+        trimPreviewFrameTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 18_000_000)
+            guard !Task.isCancelled else { return }
+
+            let image = await TrimPreviewFrameService.shared.frame(
+                url: url,
+                sourceTime: sourceTime
+            )
+
+            guard let self,
+                  !Task.isCancelled,
+                  generation == self.trimPreviewFrameGeneration else {
+                return
+            }
+
+            self.trimPreviewImage = image
+        }
+    }
+
+    func clearTrimPreviewFrame() {
+        trimPreviewFrameTask?.cancel()
+        trimPreviewFrameTask = nil
+        trimPreviewFrameGeneration += 1
+        TrimPreviewFrameService.shared.cancelPendingRequest()
+        trimPreviewImage = nil
+        trimPreviewSourceTime = nil
     }
 
     func importFiles(_ urls: [URL]) {

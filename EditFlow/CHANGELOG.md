@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.6.9
+
+### Added
+
+- The large editor preview now shows the exact source frame under the active trim boundary while dragging a clip edge.
+- Left-edge trimming previews the frame at the new `trimStart`; right-edge trimming previews the last included frame immediately before the new `trimEnd`.
+- Added a cancellable, latest-request-wins trim frame generator so fast edge drags do not display stale frames.
+
+### Changed
+
+- Playback pauses during edge trimming and the normal playhead preview returns immediately after the trim gesture ends.
+- Trim preview generation is local with AVFoundation and does not require network access.
+
 ## 1.6.8
 
 ### Fixed

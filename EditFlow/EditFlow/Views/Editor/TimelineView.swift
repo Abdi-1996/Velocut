@@ -1112,6 +1112,10 @@ private struct TimelineUnifiedTrimOverlay: View {
 
         viewModel.select(sourceClip)
         viewModel.pausePlayback()
+        viewModel.updateTrimPreviewFrame(
+            for: sourceClip,
+            showingStart: edge == .left
+        )
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
 
@@ -1127,6 +1131,10 @@ private struct TimelineUnifiedTrimOverlay: View {
         )
         trimPreviewClip = result.clip
         trimSnapGuide = result.guide
+        viewModel.updateTrimPreviewFrame(
+            for: result.clip,
+            showingStart: activeEdge == .left
+        )
 
         if result.guide != lastSnapGuide {
             if result.guide != nil {
@@ -1147,6 +1155,7 @@ private struct TimelineUnifiedTrimOverlay: View {
     }
 
     private func resetState() {
+        viewModel.clearTrimPreviewFrame()
         trimOrigin = nil
         activeEdge = nil
         lastSnapGuide = nil
