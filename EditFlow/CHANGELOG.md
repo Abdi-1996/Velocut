@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.6.5
+
+### Fixed
+
+- Completely separated selected-clip edge trim touch zones from the clip long-press move gesture.
+- The center of a selected clip is now the only area that can start long-press movement; the left and right 44-point edge zones are reserved exclusively for trimming.
+- Trim handles are promoted above clip interaction layers and use immediate UIKit touch capture without delayed touch delivery.
+
 ## 1.6.4
 
 ### Fixed

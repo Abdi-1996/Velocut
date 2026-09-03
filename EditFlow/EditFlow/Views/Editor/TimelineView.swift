@@ -537,7 +537,25 @@ private struct TimelineClipView: View {
         .transaction { transaction in
             transaction.animation = nil
         }
-        .simultaneousGesture(clipMoveGesture)
+        .overlay {
+            GeometryReader { proxy in
+                let edgeExclusion = selected
+                    ? min(44, max(18, proxy.size.width * 0.28))
+                    : 0
+
+                Color.clear
+                    .frame(
+                        width: max(0, proxy.size.width - edgeExclusion * 2),
+                        height: proxy.size.height
+                    )
+                    .position(
+                        x: proxy.size.width / 2,
+                        y: proxy.size.height / 2
+                    )
+                    .contentShape(Rectangle())
+                    .simultaneousGesture(clipMoveGesture)
+            }
+        }
         .onChange(of: moveGestureActive) { _, active in
             if !active, isMoving {
                 resetMoveState()
@@ -614,12 +632,12 @@ private struct TimelineClipView: View {
         }
         .frame(width: trimTouchWidth, height: 44)
         .contentShape(Rectangle())
+        .zIndex(5000)
         .accessibilityLabel(edge == .left ? "Обрезать начало клипа" : "Обрезать конец клипа")
     }
 
     private var trimTouchWidth: CGFloat {
-        let clipWidth = max(34, CGFloat(displayClip.playbackDuration) * zoom)
-        return min(44, max(20, clipWidth / 2))
+        44
     }
 
     private func beginTrim(edge: TrimEdge) {
@@ -1056,7 +1074,11 @@ private struct CapCutTrimTouchView: UIViewRepresentable {
         recognizer.minimumPressDuration = 0
         recognizer.allowableMovement = .greatestFiniteMagnitude
         recognizer.cancelsTouchesInView = true
+        recognizer.delaysTouchesBegan = false
+        recognizer.delaysTouchesEnded = false
         recognizer.delegate = context.coordinator
+
+        view.isExclusiveTouch = true
 
         view.addGestureRecognizer(recognizer)
         return view
