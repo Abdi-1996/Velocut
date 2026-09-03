@@ -10,6 +10,7 @@ final class EditorViewModel: ObservableObject {
     @Published var selectedClipID: UUID?
     @Published var playhead: Double = 0
     @Published var player = AVPlayer()
+    @Published private(set) var previewClipID: UUID?
     @Published var isImporting = false
     @Published var isExporting = false
     @Published var exportProgress: Double = 0
@@ -22,7 +23,12 @@ final class EditorViewModel: ObservableObject {
     private let store: ProjectStore
     private let importer = MediaImportService()
     private let exporter = VideoExportService()
-    private var previewClipID: UUID?
+    private let previewPlayback = PreviewPlaybackService()
+
+    private var loadedPreviewClipID: UUID?
+    private var loadedPreviewSpeedPoints: [SpeedPoint] = []
+    private var previewBuildTask: Task<Void, Never>?
+    private var previewBuildGeneration = 0
 
     init(project: EditProject, store: ProjectStore) {
         self.project = project
@@ -32,9 +38,22 @@ final class EditorViewModel: ObservableObject {
         refreshPlayer()
     }
 
+    deinit {
+        previewBuildTask?.cancel()
+    }
+
     var selectedClip: MediaClip? {
         guard let selectedClipID else { return nil }
         return project.clips.first { $0.id == selectedClipID }
+    }
+
+    var previewClip: MediaClip? {
+        guard let previewClipID else { return nil }
+        return project.clips.first { $0.id == previewClipID }
+    }
+
+    var hasInlineEditor: Bool {
+        showingSpeedRamp || showingClipTools
     }
 
     func mediaURL(for clip: MediaClip) -> URL {
@@ -81,41 +100,75 @@ final class EditorViewModel: ObservableObject {
 
     func select(_ clip: MediaClip) {
         selectedClipID = clip.id
-        refreshPlayer()
+    }
+
+    func openSpeedRamp() {
+        guard let clip = selectedClip, clip.kind == .video else {
+            errorMessage = "Speed Ramp доступен для видеоклипов."
+            return
+        }
+        showingClipTools = false
+        showingSpeedRamp = true
+        let frame = 1 / Double(max(1, project.frameRate))
+        let target = min(max(playhead, clip.timelineStart), max(clip.timelineStart, clip.timelineEnd - frame))
+        scrubTimeline(to: target)
+    }
+
+    func openClipTools() {
+        guard selectedClip != nil else { return }
+        showingSpeedRamp = false
+        showingClipTools = true
+    }
+
+    func closeInlineEditor() {
+        showingSpeedRamp = false
+        showingClipTools = false
+    }
+
+    func stepFrame(_ direction: Int) {
+        let step = Double(direction) / Double(max(1, project.frameRate))
+        scrubTimeline(to: playhead + step)
     }
 
     func scrubTimeline(to timelineTime: Double) {
         let clamped = min(max(0, timelineTime), max(0, project.duration))
         playhead = clamped
 
-        let activeVideo = project.clips
+        let activeVisual = project.clips
             .filter {
-                $0.kind == .video &&
+                $0.kind != .audio &&
                 clamped >= $0.timelineStart &&
-                clamped <= $0.timelineEnd
+                (clamped < $0.timelineEnd || (clamped == project.duration && clamped <= $0.timelineEnd))
             }
-            .sorted { $0.layer > $1.layer }
+            .sorted {
+                if $0.layer == $1.layer { return $0.timelineStart > $1.timelineStart }
+                return $0.layer > $1.layer
+            }
             .first
 
-        guard let clip = activeVideo else {
+        guard let clip = activeVisual else {
+            previewBuildTask?.cancel()
+            previewClipID = nil
+            loadedPreviewClipID = nil
+            loadedPreviewSpeedPoints = []
             player.pause()
+            player.replaceCurrentItem(with: nil)
             return
         }
 
-        let url = mediaURL(for: clip)
-        if previewClipID != clip.id {
-            player.replaceCurrentItem(with: AVPlayerItem(url: url))
-            previewClipID = clip.id
+        previewClipID = clip.id
+
+        guard clip.kind == .video else {
+            previewBuildTask?.cancel()
+            loadedPreviewClipID = nil
+            loadedPreviewSpeedPoints = []
+            player.pause()
+            player.replaceCurrentItem(with: nil)
+            return
         }
 
         let localTimeline = min(max(0, clamped - clip.timelineStart), clip.playbackDuration)
-        let fraction = clip.playbackDuration > 0 ? localTimeline / clip.playbackDuration : 0
-        let sourceTime = clip.trimStart + clip.trimmedDuration * fraction
-        player.seek(
-            to: CMTime(seconds: sourceTime, preferredTimescale: 600),
-            toleranceBefore: .zero,
-            toleranceAfter: .zero
-        )
+        ensurePreviewItem(for: clip, localTimeline: localTimeline)
     }
 
     func splitSelected(at timelineTime: Double) {
@@ -138,7 +191,9 @@ final class EditorViewModel: ObservableObject {
         project.clips[index] = left
         project.clips.insert(right, at: index + 1)
         selectedClipID = right.id
+        invalidatePreview()
         commit()
+        scrubTimeline(to: playhead)
     }
 
     func duplicateSelected() {
@@ -155,12 +210,16 @@ final class EditorViewModel: ObservableObject {
         project.clips.removeAll { $0.id == selectedClipID }
         self.selectedClipID = project.clips.first?.id
         compactPrimaryTrack()
+        invalidatePreview()
         commit()
-        refreshPlayer()
+        scrubTimeline(to: min(playhead, project.duration))
     }
 
     func toggleMuteSelected() {
         mutateSelected { $0.isMuted.toggle() }
+        invalidatePreview()
+        commit()
+        scrubTimeline(to: playhead)
     }
 
     func setTrim(start: Double? = nil, end: Double? = nil) {
@@ -169,7 +228,9 @@ final class EditorViewModel: ObservableObject {
             if let end { clip.trimEnd = max(clip.trimStart + 0.05, min(clip.sourceDuration, end)) }
         }
         compactPrimaryTrack()
+        invalidatePreview()
         commit()
+        scrubTimeline(to: min(playhead, project.duration))
     }
 
     func previewNonRippleTrim(_ updatedClip: MediaClip) {
@@ -179,14 +240,17 @@ final class EditorViewModel: ObservableObject {
     }
 
     func finishNonRippleTrim() {
+        invalidatePreview()
         commit()
-        scrubTimeline(to: playhead)
+        scrubTimeline(to: min(playhead, project.duration))
     }
 
     func applySpeedPreset(_ preset: SpeedPreset) {
         mutateSelected { $0.speedPoints = preset.points }
         compactPrimaryTrack()
+        invalidatePreview()
         commit()
+        keepPlayheadInsideSelectedClipAndRefresh()
     }
 
     func updateSpeedPoint(_ point: SpeedPoint) {
@@ -196,7 +260,9 @@ final class EditorViewModel: ObservableObject {
             clip.speedPoints.sort { $0.position < $1.position }
         }
         compactPrimaryTrack()
+        invalidatePreview()
         commit()
+        keepPlayheadInsideSelectedClipAndRefresh()
     }
 
     func updateEffects(_ effects: EffectSettings) {
@@ -240,7 +306,11 @@ final class EditorViewModel: ObservableObject {
         errorMessage = nil
         Task {
             do {
-                let output = try await exporter.export(project: project, rootDirectory: store.projectDirectory(project.id), quality: quality)
+                let output = try await exporter.export(
+                    project: project,
+                    rootDirectory: store.projectDirectory(project.id),
+                    quality: quality
+                )
                 exportedURL = output
                 if saveToPhotos { try await saveVideoToPhotos(output) }
                 showingExport = false
@@ -252,20 +322,67 @@ final class EditorViewModel: ObservableObject {
     }
 
     func refreshPlayer() {
-        guard let clip = selectedClip, clip.kind == .video else {
-            player.replaceCurrentItem(with: nil)
-            previewClipID = nil
+        scrubTimeline(to: min(max(0, playhead), max(0, project.duration)))
+    }
+
+    private func ensurePreviewItem(for clip: MediaClip, localTimeline: Double) {
+        if loadedPreviewClipID == clip.id,
+           loadedPreviewSpeedPoints == clip.speedPoints,
+           player.currentItem != nil {
+            seekPreview(to: localTimeline)
             return
         }
-        let url = mediaURL(for: clip)
-        player.replaceCurrentItem(with: AVPlayerItem(url: url))
-        previewClipID = clip.id
 
-        let timelineTime = min(max(playhead, clip.timelineStart), clip.timelineEnd)
-        let localTimeline = max(0, timelineTime - clip.timelineStart)
-        let fraction = clip.playbackDuration > 0 ? localTimeline / clip.playbackDuration : 0
-        let sourceTime = clip.trimStart + clip.trimmedDuration * fraction
-        player.seek(to: CMTime(seconds: sourceTime, preferredTimescale: 600))
+        previewBuildGeneration += 1
+        let generation = previewBuildGeneration
+        previewBuildTask?.cancel()
+        let url = mediaURL(for: clip)
+        let snapshot = clip
+
+        previewBuildTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let item = try await previewPlayback.makePlayerItem(for: snapshot, url: url)
+                guard !Task.isCancelled, generation == previewBuildGeneration else { return }
+                player.pause()
+                player.replaceCurrentItem(with: item)
+                loadedPreviewClipID = snapshot.id
+                loadedPreviewSpeedPoints = snapshot.speedPoints
+
+                let currentLocal: Double
+                if previewClipID == snapshot.id {
+                    currentLocal = min(max(0, playhead - snapshot.timelineStart), snapshot.playbackDuration)
+                } else {
+                    currentLocal = localTimeline
+                }
+                seekPreview(to: currentLocal)
+            } catch {
+                guard !Task.isCancelled else { return }
+                errorMessage = "Не удалось подготовить предпросмотр: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func seekPreview(to localTimeline: Double) {
+        let time = CMTime(seconds: max(0, localTimeline), preferredTimescale: 600)
+        player.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero)
+    }
+
+    private func invalidatePreview() {
+        previewBuildTask?.cancel()
+        previewBuildGeneration += 1
+        loadedPreviewClipID = nil
+        loadedPreviewSpeedPoints = []
+    }
+
+    private func keepPlayheadInsideSelectedClipAndRefresh() {
+        guard let clip = selectedClip else {
+            scrubTimeline(to: min(playhead, project.duration))
+            return
+        }
+        let frame = 1 / Double(max(1, project.frameRate))
+        let target = min(max(playhead, clip.timelineStart), max(clip.timelineStart, clip.timelineEnd - frame))
+        scrubTimeline(to: target)
     }
 
     private func mutateSelected(_ change: (inout MediaClip) -> Void) {
@@ -276,28 +393,57 @@ final class EditorViewModel: ObservableObject {
 
     private func appendImportedMedia(_ items: [ImportedMedia], targetVisualLayer: Int? = nil) {
         let visualLayer = targetVisualLayer ?? 0
-        var videoCursor = project.clips.filter { $0.layer == visualLayer && $0.kind != .audio }.map(\.timelineEnd).max() ?? 0
-        var audioCursor = project.clips.filter { $0.kind == .audio }.map(\.timelineEnd).max() ?? 0
+        var videoCursor = project.clips
+            .filter { $0.layer == visualLayer && $0.kind != .audio }
+            .map(\.timelineEnd)
+            .max() ?? 0
+        var audioCursor = project.clips
+            .filter { $0.kind == .audio }
+            .map(\.timelineEnd)
+            .max() ?? 0
+
         for item in items {
             let start = item.kind == .audio ? audioCursor : videoCursor
             let layer = item.kind == .audio ? 2 : visualLayer
-            let clip = MediaClip(fileName: item.fileName, relativePath: item.relativePath, kind: item.kind, sourceDuration: item.duration, timelineStart: start, trimEnd: item.duration, layer: layer)
+            let clip = MediaClip(
+                fileName: item.fileName,
+                relativePath: item.relativePath,
+                kind: item.kind,
+                sourceDuration: item.duration,
+                timelineStart: start,
+                trimEnd: item.duration,
+                layer: layer
+            )
             project.clips.append(clip)
-            if item.kind == .audio { audioCursor += clip.playbackDuration } else { videoCursor += clip.playbackDuration }
+            if item.kind == .audio {
+                audioCursor += clip.playbackDuration
+            } else {
+                videoCursor += clip.playbackDuration
+            }
             selectedClipID = clip.id
         }
+
+        invalidatePreview()
         commit()
-        refreshPlayer()
+        scrubTimeline(to: min(playhead, project.duration))
     }
 
     private func compactPrimaryTrack() {
         var cursor = 0.0
-        let orderedIDs = project.clips.filter { $0.layer == 0 }.sorted { $0.timelineStart < $1.timelineStart }.map(\.id)
+        let orderedIDs = project.clips
+            .filter { $0.layer == 0 }
+            .sorted { $0.timelineStart < $1.timelineStart }
+            .map(\.id)
         var previous: MediaClip?
+
         for id in orderedIDs {
             guard let index = project.clips.firstIndex(where: { $0.id == id }) else { continue }
             if let previous, previous.resolvedTransition.style == .crossDissolve {
-                cursor -= min(previous.resolvedTransition.duration, previous.playbackDuration * 0.45, project.clips[index].playbackDuration * 0.45)
+                cursor -= min(
+                    previous.resolvedTransition.duration,
+                    previous.playbackDuration * 0.45,
+                    project.clips[index].playbackDuration * 0.45
+                )
             }
             project.clips[index].timelineStart = cursor
             cursor += project.clips[index].playbackDuration
