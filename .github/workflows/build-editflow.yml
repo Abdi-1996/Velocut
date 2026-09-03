@@ -1,5 +1,5 @@
 name: EditFlow iOS Build
-# Final clean CI for EditFlow 1.8.0 contextual toolbar
+# Final clean CI for EditFlow 1.8.0 contextual toolbar after cleanup
 
 on:
   workflow_dispatch:
