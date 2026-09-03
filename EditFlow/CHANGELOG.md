@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.3.1
+
+### Fixed
+
+- Speed Ramp now affects the editor preview instead of only changing clip timing data.
+- Preview playback is built from the same segmented time-scaling logic used by export.
+- Timeline scrubbing seeks inside the speed-ramped preview composition instead of mapping linearly to the source file.
+- Frame stepping now goes through the timeline preview engine and respects the active clip under the playhead.
+- Preview follows the media under the central Cut playhead rather than the selected clip.
+- Still images under the playhead remain visible in Preview.
+
+### Changed
+
+- Speed Ramp settings now open inside the editor workspace instead of covering the whole screen.
+- Effects, transitions, and keyframe settings now use the same inline workspace panel.
+- Preview stays visible above the settings panel on iPhone and stays visible in the main canvas on iPad.
+
 ## 1.3.0
 
 ### Changed
