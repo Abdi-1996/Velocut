@@ -9,6 +9,9 @@ struct EditorView: View {
     @State private var showingImporter = false
     @State private var showingGallery = false
     @State private var gallerySelection: [PhotosPickerItem] = []
+    @State private var showingAudioVideoGallery = false
+    @State private var audioVideoSelection: [PhotosPickerItem] = []
+    @State private var isExtractingAudio = false
     @State private var selectedTool: EditorWorkspaceTool = .edit
     @State private var galleryTargetLayer = 0
     @State private var isFullScreen = false
@@ -51,6 +54,20 @@ struct EditorView: View {
                 gallerySelection.removeAll()
             }
         }
+        .photosPicker(
+            isPresented: $showingAudioVideoGallery,
+            selection: $audioVideoSelection,
+            maxSelectionCount: 20,
+            selectionBehavior: .ordered,
+            matching: .videos,
+            preferredItemEncoding: .current
+        )
+        .onChange(of: audioVideoSelection) { _, items in
+            guard !items.isEmpty else { return }
+            Task {
+                await extractAudioFromGallery(items)
+            }
+        }
         .sheet(isPresented: $viewModel.showingExport) {
             ExportSheet(viewModel: viewModel)
                 .presentationDetents([.large])
@@ -76,10 +93,10 @@ struct EditorView: View {
             }
         }
         .overlay {
-            if viewModel.isImporting {
+            if viewModel.isImporting || isExtractingAudio {
                 VStack(spacing: 12) {
                     ProgressView()
-                    Text("Импорт из галереи…")
+                    Text(isExtractingAudio ? "Извлечение аудио из видео…" : "Импорт из галереи…")
                         .font(.subheadline.weight(.medium))
                 }
                 .padding(22)
@@ -153,6 +170,7 @@ struct EditorView: View {
                     viewModel: viewModel,
                     galleryAction: openMainGallery,
                     overlayAction: openOverlayGallery,
+                    audioGalleryAction: { showingAudioVideoGallery = true },
                     fileAction: { showingImporter = true }
                 )
 
@@ -180,6 +198,7 @@ struct EditorView: View {
                     viewModel: viewModel,
                     galleryAction: openMainGallery,
                     overlayAction: openOverlayGallery,
+                    audioGalleryAction: { showingAudioVideoGallery = true },
                     fileAction: { showingImporter = true }
                 )
                 EditorToolDock(selection: $selectedTool)
@@ -203,6 +222,38 @@ struct EditorView: View {
     private func openOverlayGallery() {
         galleryTargetLayer = 1
         showingGallery = true
+    }
+
+    @MainActor
+    private func extractAudioFromGallery(_ items: [PhotosPickerItem]) async {
+        isExtractingAudio = true
+        viewModel.errorMessage = nil
+        var sourceURLs: [URL] = []
+        var audioURLs: [URL] = []
+
+        defer {
+            for url in sourceURLs {
+                try? FileManager.default.removeItem(at: url)
+            }
+            audioVideoSelection.removeAll()
+            isExtractingAudio = false
+        }
+
+        do {
+            for item in items {
+                guard let media = try await item.loadTransferable(type: GalleryMediaTransfer.self) else {
+                    throw MediaImportError.inaccessibleFile
+                }
+                sourceURLs.append(media.url)
+                let audioURL = try await AudioExtractionService.shared.extractAudio(from: media.url)
+                audioURLs.append(audioURL)
+            }
+
+            guard !audioURLs.isEmpty else { return }
+            viewModel.importFiles(audioURLs)
+        } catch {
+            viewModel.errorMessage = "Не удалось извлечь аудио из видео: \(error.localizedDescription)"
+        }
     }
 }
 
@@ -433,6 +484,7 @@ private struct ContextToolBar: View {
     @ObservedObject var viewModel: EditorViewModel
     let galleryAction: () -> Void
     let overlayAction: () -> Void
+    let audioGalleryAction: () -> Void
     let fileAction: () -> Void
 
     var body: some View {
@@ -449,6 +501,7 @@ private struct ContextToolBar: View {
 
                 case .audio:
                     item("Импорт аудио", "music.note.list", fileAction)
+                    item("Из видео", "waveform.badge.plus", audioGalleryAction)
                     item("Без звука", "speaker.slash") { viewModel.toggleMuteSelected() }
 
                 case .text:
@@ -494,6 +547,7 @@ private struct ContextToolBar: View {
             viewModel.selectedClip == nil &&
             title != "Добавить" &&
             title != "Импорт аудио" &&
+            title != "Из видео" &&
             title != "Добавить слой" &&
             title != "Добавить текст"
         )
