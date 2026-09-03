@@ -333,6 +333,24 @@ private struct PlaybackControlBar: View {
 
     var body: some View {
         HStack(spacing: 10) {
+            Text("\(viewModel.playhead.formattedDuration) / \(viewModel.project.duration.formattedDuration)")
+                .font(.caption2.monospacedDigit().weight(.medium))
+                .foregroundStyle(.white.opacity(0.72))
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+
+            Button { viewModel.stepFrame(-1) } label: {
+                Image(systemName: "backward.frame.fill")
+            }
+            .accessibilityLabel("Предыдущий кадр")
+
+            Button { viewModel.stepFrame(1) } label: {
+                Image(systemName: "forward.frame.fill")
+            }
+            .accessibilityLabel("Следующий кадр")
+
+            Spacer(minLength: 4)
+
             transportButton("backward.end.fill", label: "Воспроизвести с начала") {
                 viewModel.playFromStart()
             }
@@ -360,24 +378,6 @@ private struct PlaybackControlBar: View {
             transportButton("arrow.up.left.and.arrow.down.right", label: "Полный экран") {
                 fullScreenAction()
             }
-
-            Spacer(minLength: 4)
-
-            Button { viewModel.stepFrame(-1) } label: {
-                Image(systemName: "backward.frame.fill")
-            }
-            .accessibilityLabel("Предыдущий кадр")
-
-            Button { viewModel.stepFrame(1) } label: {
-                Image(systemName: "forward.frame.fill")
-            }
-            .accessibilityLabel("Следующий кадр")
-
-            Text("\(viewModel.playhead.formattedDuration) / \(viewModel.project.duration.formattedDuration)")
-                .font(.caption2.monospacedDigit().weight(.medium))
-                .foregroundStyle(.white.opacity(0.72))
-                .lineLimit(1)
-                .minimumScaleFactor(0.72)
         }
         .padding(.horizontal, 10)
         .foregroundStyle(.white.opacity(0.9))

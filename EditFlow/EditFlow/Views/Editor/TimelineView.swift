@@ -5,11 +5,16 @@ struct TimelineView: View {
     @ObservedObject var viewModel: EditorViewModel
 
     @State private var zoom: CGFloat = 78
+    @State private var trackHeight: CGFloat = 50
     @State private var panOriginTime: Double?
     @State private var verticalOriginOffset: CGFloat?
     @State private var verticalOffset: CGFloat = 0
     @State private var panAxis: TimelinePanAxis?
     @State private var snappingEnabled = true
+    @State private var isPinching = false
+    @State private var pinchOriginZoom: CGFloat?
+    @State private var pinchAnchorX: CGFloat?
+    @State private var pinchAnchorTime: Double?
 
     @State private var movingClipID: UUID?
     @State private var movePreview: TimelineMovePreview?
@@ -19,8 +24,9 @@ struct TimelineView: View {
     @State private var trimSnapGuide: Double?
 
     private let labelWidth: CGFloat = 44
-    private let rowHeight: CGFloat = 50
     private let rowSpacing: CGFloat = 7
+
+    private var rowHeight: CGFloat { trackHeight }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -44,6 +50,12 @@ struct TimelineView: View {
                         )
                     }
                 }
+                .simultaneousGesture(
+                    timelineMagnifyGesture(
+                        viewportWidth: proxy.size.width,
+                        playheadX: playheadX
+                    )
+                )
             }
         }
         .background(Color(red: 0.045, green: 0.045, blue: 0.052))
@@ -110,15 +122,17 @@ struct TimelineView: View {
             .buttonStyle(.plain)
             .accessibilityLabel(snappingEnabled ? "Отключить привязку" : "Включить привязку")
 
-            Image(systemName: "minus.magnifyingglass")
+            Text("−H")
+                .font(.caption2.monospaced().weight(.semibold))
                 .foregroundStyle(.white.opacity(0.42))
 
-            Slider(value: $zoom, in: 38...150)
+            Slider(value: $trackHeight, in: 38...82)
                 .frame(maxWidth: 110)
                 .tint(.white)
-                .accessibilityLabel("Масштаб таймлайна")
+                .accessibilityLabel("Высота дорожек")
 
-            Image(systemName: "plus.magnifyingglass")
+            Text("+H")
+                .font(.caption2.monospaced().weight(.semibold))
                 .foregroundStyle(.white.opacity(0.42))
         }
         .padding(.horizontal, 10)
@@ -288,7 +302,7 @@ struct TimelineView: View {
                     y: 4
                 )
                 .onTapGesture {
-                    guard movingClipID == nil, trimmingClipID == nil else { return }
+                    guard movingClipID == nil, trimmingClipID == nil, !isPinching else { return }
                     viewModel.select(sourceClip)
                 }
                 .accessibilityLabel("\(sourceClip.fileName), \(displayClip.playbackDuration.formattedDuration)")
@@ -367,7 +381,7 @@ struct TimelineView: View {
     private func timelineNavigationGesture(viewportHeight: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 3)
             .onChanged { value in
-                guard movingClipID == nil, trimmingClipID == nil else { return }
+                guard movingClipID == nil, trimmingClipID == nil, !isPinching else { return }
 
                 let dx = value.translation.width
                 let dy = value.translation.height
@@ -406,6 +420,46 @@ struct TimelineView: View {
             }
     }
 
+    private func timelineMagnifyGesture(
+        viewportWidth: CGFloat,
+        playheadX: CGFloat
+    ) -> some Gesture {
+        MagnifyGesture(minimumScaleDelta: 0.01)
+            .onChanged { value in
+                guard movingClipID == nil, trimmingClipID == nil else { return }
+
+                if pinchOriginZoom == nil {
+                    isPinching = true
+                    pinchOriginZoom = zoom
+                    let anchorX = min(max(labelWidth, value.startLocation.x), viewportWidth)
+                    pinchAnchorX = anchorX
+                    pinchAnchorTime = viewModel.playhead + Double((anchorX - playheadX) / max(1, zoom))
+                    viewModel.pausePlayback()
+                }
+
+                guard let originZoom = pinchOriginZoom,
+                      let anchorX = pinchAnchorX,
+                      let anchorTime = pinchAnchorTime else { return }
+
+                let newZoom = min(220, max(30, originZoom * value.magnification))
+                zoom = newZoom
+
+                let anchoredPlayhead = anchorTime - Double((anchorX - playheadX) / max(1, newZoom))
+                viewModel.playhead = min(
+                    max(0, anchoredPlayhead),
+                    max(0, viewModel.project.duration)
+                )
+            }
+            .onEnded { _ in
+                let finalTime = viewModel.playhead
+                isPinching = false
+                pinchOriginZoom = nil
+                pinchAnchorX = nil
+                pinchAnchorTime = nil
+                viewModel.scrubTimeline(to: finalTime)
+            }
+    }
+
     private var rulerPanGesture: some Gesture {
         DragGesture(minimumDistance: 2)
             .onChanged { value in
@@ -432,11 +486,13 @@ struct TimelineView: View {
 
         guard snappingEnabled else { return time }
 
-        let candidates = viewModel.project.clips.flatMap { [$0.timelineStart, $0.timelineEnd] }
+        var candidates = viewModel.project.clips.flatMap { [$0.timelineStart, $0.timelineEnd] }
+        candidates.append(time.rounded())
+        let threshold = min(0.20, max(0.04, Double(10 / max(1, zoom))))
 
         if let nearest = candidates.min(by: { abs($0 - time) < abs($1 - time) }),
-           abs(nearest - time) <= 0.08 {
-            return nearest
+           abs(nearest - time) <= threshold {
+            return min(max(0, nearest), duration)
         }
 
         return time
@@ -883,7 +939,7 @@ private struct TimelineClipView: View {
     }
 
     private var clipMoveGesture: some Gesture {
-        LongPressGesture(minimumDuration: 0.80, maximumDistance: 12)
+        LongPressGesture(minimumDuration: 0.50, maximumDistance: 12)
             .sequenced(before: DragGesture(minimumDistance: 0))
             .updating($moveGestureActive) { value, state, _ in
                 switch value {
@@ -1263,6 +1319,13 @@ private struct TimelineUnifiedTrimOverlay: View {
            nearest >= minimum,
            nearest <= maximum {
             return (nearest, nearest)
+        }
+
+        let wholeSecond = clamped.rounded()
+        if abs(wholeSecond - clamped) <= threshold,
+           wholeSecond >= minimum,
+           wholeSecond <= maximum {
+            return (wholeSecond, wholeSecond)
         }
 
         return (clamped, nil)

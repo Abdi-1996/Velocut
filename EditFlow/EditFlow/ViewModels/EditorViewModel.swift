@@ -768,7 +768,8 @@ final class EditorViewModel: ObservableObject {
                 return $0.kind != .audio
             }
             .flatMap { [$0.timelineStart, $0.timelineEnd] }
-        let targets = compatibleTargets + [playhead]
+        let wholeSecondTargets = [start.rounded(), (start + duration).rounded()]
+        let targets = compatibleTargets + [playhead] + wholeSecondTargets
 
         for target in targets {
             options.append((abs(target - start), target, target))

@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.7.0
+
+### Added
+
+- Added two-finger pinch zoom for the timeline time scale. The time under the initial pinch center stays anchored while zooming.
+- Magnet mode now snaps clip movement, trim boundaries, and timeline scrubbing to whole-second grid points as well as compatible clip edges.
+
+### Changed
+
+- Move Mode now activates after a 0.5-second hold. Haptic feedback and the red clip outline appear only when Move Mode actually activates.
+- The timeline header slider now changes track height instead of horizontal timeline length; clip thumbnails and waveform area resize with the track.
+- Moved the primary playback controls (play from start, play/pause, loop, fullscreen) to the right side of the playback bar.
+- Horizontal timeline zoom is now controlled by a two-finger pinch rather than the header slider.
+
 ## 1.6.9
 
 ### Added
