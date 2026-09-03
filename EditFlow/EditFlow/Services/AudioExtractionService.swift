@@ -35,14 +35,16 @@ actor AudioExtractionService {
             throw AudioExtractionError.cannotCreateExporter
         }
 
-        let directory = FileManager.default.temporaryDirectory
+        let rootDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("EditFlowExtractedAudio", isDirectory: true)
+        let directory = rootDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
         let baseName = sourceURL.deletingPathExtension().lastPathComponent
-        let safeBaseName = baseName.isEmpty ? "audio" : baseName
+        let safeBaseName = baseName.isEmpty ? "Аудио из видео" : baseName
         let outputURL = directory
-            .appendingPathComponent("\(UUID().uuidString)-\(safeBaseName)")
+            .appendingPathComponent(safeBaseName)
             .appendingPathExtension("m4a")
 
         exporter.outputURL = outputURL
