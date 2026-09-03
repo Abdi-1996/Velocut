@@ -33,7 +33,7 @@ jobs:
           timeline_path = Path('EditFlow/EditFlow/Views/Editor/TimelineView.swift')
           text = timeline_path.read_text()
 
-          text = text.replace('CapCutTrimTouchView(', 'EdgeTrimPanCaptureView(')
+          text = text.replace('CapCutTrimTouchView', 'EdgeTrimPanCaptureView')
 
           old_end = '''        let finalClip = trimPreviewClip ?? sourceClip\n\n        viewModel.previewNonRippleTrim(finalClip)\n        viewModel.finishNonRippleTrim()\n\n        resetTrimState()'''
           new_end = '''        let finalClip = trimPreviewClip ?? sourceClip\n\n        viewModel.commitNonRippleTrim(finalClip)\n\n        resetTrimState()'''
