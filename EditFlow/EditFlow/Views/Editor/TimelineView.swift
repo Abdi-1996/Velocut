@@ -866,7 +866,7 @@ private struct TimelineClipView: View {
     }
 
     private var clipMoveGesture: some Gesture {
-        LongPressGesture(minimumDuration: 0.40, maximumDistance: 12)
+        LongPressGesture(minimumDuration: 0.80, maximumDistance: 12)
             .sequenced(before: DragGesture(minimumDistance: 0))
             .updating($moveGestureActive) { value, state, _ in
                 switch value {

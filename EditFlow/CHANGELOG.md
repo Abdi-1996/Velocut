@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.4
+
+### Fixed
+
+- Increased clip long-press move activation from 0.4 seconds to 0.8 seconds so edge trimming gets clear touch priority and accidental clip movement is avoided.
+
 ## 1.6.3
 
 ### Fixed
