@@ -8,6 +8,10 @@ on:
       - "EditFlow/**"
       - ".github/workflows/build-editflow.yml"
 
+concurrency:
+  group: editflow-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
