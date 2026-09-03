@@ -126,7 +126,7 @@ struct TimelineView: View {
                 .font(.caption2.monospaced().weight(.semibold))
                 .foregroundStyle(.white.opacity(0.42))
 
-            Slider(value: $trackHeight, in: 38...82)
+            Slider(value: $trackHeight, in: 46...86)
                 .frame(maxWidth: 110)
                 .tint(.white)
                 .accessibilityLabel("Высота дорожек")
@@ -463,7 +463,7 @@ struct TimelineView: View {
     private var rulerPanGesture: some Gesture {
         DragGesture(minimumDistance: 2)
             .onChanged { value in
-                guard movingClipID == nil, trimmingClipID == nil else { return }
+                guard movingClipID == nil, trimmingClipID == nil, !isPinching else { return }
 
                 if panOriginTime == nil {
                     panOriginTime = viewModel.playhead
@@ -500,8 +500,7 @@ struct TimelineView: View {
 
     private var tickStep: Double {
         if zoom >= 120 { return 0.5 }
-        if zoom >= 70 { return 1 }
-        return 2
+        return 1
     }
 
     private func timeLabel(_ seconds: Double) -> String {
