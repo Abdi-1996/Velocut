@@ -527,7 +527,7 @@ private struct TimelineClipView: View {
                     .fill(.white.opacity(0.92))
                     .frame(width: 2, height: 18)
             }
-            .contentShape(Rectangle().inset(by: -10))
+            .contentShape(Rectangle().inset(by: -14))
             .highPriorityGesture(trimGesture(edge: edge))
             .accessibilityLabel(edge == .left ? "Обрезать начало клипа" : "Обрезать конец клипа")
     }
@@ -637,7 +637,7 @@ private struct TimelineClipView: View {
     }
 
     private func trimGesture(edge: TrimEdge) -> some Gesture {
-        DragGesture(minimumDistance: 0)
+        DragGesture(minimumDistance: 0, coordinateSpace: .global)
             .onChanged { value in
                 switch edge {
                 case .left:

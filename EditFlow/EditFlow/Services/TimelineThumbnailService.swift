@@ -6,6 +6,9 @@ final class TimelineThumbnailService {
 
     private let cache = NSCache<NSString, NSArray>()
     private let workQueue = DispatchQueue(label: "kz.colorize.editflow.timeline-thumbnails", qos: .userInitiated)
+    private let stateQueue = DispatchQueue(label: "kz.colorize.editflow.timeline-thumbnails-state")
+    private var latestRequest: [UUID: UUID] = [:]
+    private var latestImages: [UUID: [UIImage]] = [:]
 
     private init() {
         cache.countLimit = 160
@@ -27,14 +30,26 @@ final class TimelineThumbnailService {
             count: normalizedCount,
             pixelHeight: normalizedHeight
         ) as NSString
+        let requestID = UUID()
+
+        stateQueue.sync {
+            latestRequest[clip.id] = requestID
+        }
 
         if let cached = cache.object(forKey: key) as? [UIImage] {
+            stateQueue.sync { latestImages[clip.id] = cached }
             return cached
         }
 
         return await withCheckedContinuation { continuation in
-            workQueue.async { [cache] in
+            workQueue.async { [self] in
+                guard isLatest(requestID, for: clip.id) else {
+                    continuation.resume(returning: lastImages(for: clip.id))
+                    return
+                }
+
                 if let cached = cache.object(forKey: key) as? [UIImage] {
+                    stateQueue.sync { latestImages[clip.id] = cached }
                     continuation.resume(returning: cached)
                     return
                 }
@@ -50,6 +65,11 @@ final class TimelineThumbnailService {
                 images.reserveCapacity(normalizedCount)
 
                 for index in 0..<normalizedCount {
+                    guard isLatest(requestID, for: clip.id) else {
+                        continuation.resume(returning: lastImages(for: clip.id))
+                        return
+                    }
+
                     autoreleasepool {
                         let fraction: Double
                         if normalizedCount == 1 {
@@ -65,12 +85,26 @@ final class TimelineThumbnailService {
                     }
                 }
 
+                guard isLatest(requestID, for: clip.id) else {
+                    continuation.resume(returning: lastImages(for: clip.id))
+                    return
+                }
+
                 if !images.isEmpty {
                     cache.setObject(images as NSArray, forKey: key)
+                    stateQueue.sync { latestImages[clip.id] = images }
                 }
-                continuation.resume(returning: images)
+                continuation.resume(returning: images.isEmpty ? lastImages(for: clip.id) : images)
             }
         }
+    }
+
+    private func isLatest(_ requestID: UUID, for clipID: UUID) -> Bool {
+        stateQueue.sync { latestRequest[clipID] == requestID }
+    }
+
+    private func lastImages(for clipID: UUID) -> [UIImage] {
+        stateQueue.sync { latestImages[clipID] ?? [] }
     }
 
     private func cacheKey(
