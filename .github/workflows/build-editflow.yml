@@ -8,6 +8,7 @@ on:
       - "EditFlow/**"
       - ".github/workflows/build-editflow.yml"
       - ".github/scripts/apply_editflow_1_6_7.py"
+      - ".github/scripts/fix_editflow_1_6_7_recognizer.py"
 
 concurrency:
   group: editflow-${{ github.ref }}
@@ -24,7 +25,9 @@ jobs:
         with:
           ref: ${{ github.ref_name }}
       - name: Apply external trim controls
-        run: python3 .github/scripts/apply_editflow_1_6_7.py
+        run: |
+          python3 .github/scripts/apply_editflow_1_6_7.py
+          python3 .github/scripts/fix_editflow_1_6_7_recognizer.py
       - name: Commit patch if changed
         run: |
           if git diff --quiet -- EditFlow/EditFlow/Views/Editor/TimelineView.swift EditFlow/project.yml EditFlow/CHANGELOG.md; then
@@ -33,5 +36,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add EditFlow/EditFlow/Views/Editor/TimelineView.swift EditFlow/project.yml EditFlow/CHANGELOG.md
-          git commit -m "Move trim controls above timeline interactions"
+          git commit -m "Finalize external trim gesture recognizer"
           git push
