@@ -1,5 +1,5 @@
 name: EditFlow iOS Build
-# Final clean CI for EditFlow 1.7.0
+# Final clean CI for EditFlow 1.7.0 after patch cleanup
 
 on:
   workflow_dispatch:
@@ -10,7 +10,7 @@ on:
       - ".github/workflows/build-editflow.yml"
 
 concurrency:
-  group: editflow-1-7-${{ github.ref }}
+  group: editflow-1-7-final-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
