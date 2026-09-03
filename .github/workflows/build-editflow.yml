@@ -5,21 +5,21 @@ on:
   push:
     branches: [editflow]
     paths:
-      - ".github/scripts/apply_editflow_1_7_0.py"
+      - ".github/scripts/finalize_editflow_1_7_0.py"
       - ".github/workflows/build-editflow.yml"
 
 permissions:
   contents: write
 
 jobs:
-  apply-1-7-0:
+  finalize-1-7-0:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: editflow
-      - name: Apply EditFlow 1.7.0 patch
-        run: python3 .github/scripts/apply_editflow_1_7_0.py
+      - name: Finalize EditFlow 1.7.0 patch
+        run: python3 .github/scripts/finalize_editflow_1_7_0.py
       - name: Commit patch if changed
         run: |
           if git diff --quiet; then
@@ -29,5 +29,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add EditFlow .github/workflows/build-editflow.yml
-          git commit -m "Add timeline pinch zoom and magnet grid"
+          git commit -m "Finalize timeline pinch interaction"
           git push origin editflow
