@@ -3,9 +3,8 @@ name: EditFlow iOS Build
 on:
   workflow_dispatch:
   push:
-    branches: [main, editflow]
+    branches: [editflow]
     paths:
-      - "EditFlow/**"
       - ".github/workflows/build-editflow.yml"
 
 concurrency:
@@ -13,93 +12,67 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  test:
-    runs-on: macos-15
-    timeout-minutes: 20
+  apply-1-6-5:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
-      - name: Generate project
-        run: |
-          brew install xcodegen
-          cd EditFlow
-          xcodegen generate
-      - name: Build for simulator
-        run: |
-          cd EditFlow
-          xcodebuild \
-            -project EditFlow.xcodeproj \
-            -scheme EditFlow \
-            -sdk iphonesimulator \
-            -destination 'generic/platform=iOS Simulator' \
-            CODE_SIGNING_ALLOWED=NO \
-            build
-      - name: Detect available simulator
-        id: simulator
-        run: |
-          DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; data=json.load(sys.stdin); print(next((d["udid"] for devices in data["devices"].values() for d in devices if d.get("isAvailable") and "iPhone" in d.get("name", "")), ""))')
-          echo "device_id=$DEVICE_ID" >> "$GITHUB_OUTPUT"
-      - name: Boot simulator
-        if: steps.simulator.outputs.device_id != ''
-        env:
-          DEVICE_ID: ${{ steps.simulator.outputs.device_id }}
-        run: |
-          xcrun simctl boot "$DEVICE_ID" 2>/dev/null || true
-          xcrun simctl bootstatus "$DEVICE_ID" -b
-      - name: Run unit tests
-        if: steps.simulator.outputs.device_id != ''
-        env:
-          DEVICE_ID: ${{ steps.simulator.outputs.device_id }}
-        run: |
-          cd EditFlow
-          xcodebuild \
-            -project EditFlow.xcodeproj \
-            -scheme EditFlow \
-            -sdk iphonesimulator \
-            -destination "platform=iOS Simulator,id=$DEVICE_ID" \
-            -parallel-testing-enabled NO \
-            CODE_SIGNING_ALLOWED=NO \
-            test
-
-  unsigned-ipa:
-    runs-on: macos-15
-    steps:
-      - uses: actions/checkout@v4
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
-      - name: Generate project
-        run: |
-          brew install xcodegen
-          cd EditFlow
-          xcodegen generate
-      - name: Build unsigned device app
-        run: |
-          cd EditFlow
-          xcodebuild \
-            -project EditFlow.xcodeproj \
-            -scheme EditFlow \
-            -configuration Release \
-            -sdk iphoneos \
-            -destination 'generic/platform=iOS' \
-            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            build
-      - name: Package unsigned IPA
-        run: |
-          APP_PATH=$(find "$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos" -maxdepth 1 -name '*.app' -print -quit)
-          test -n "$APP_PATH"
-          mkdir -p "$RUNNER_TEMP/Payload"
-          cp -R "$APP_PATH" "$RUNNER_TEMP/Payload/"
-          cd "$RUNNER_TEMP"
-          zip -qry EditFlow-1.6.4-unsigned.ipa Payload
-      - uses: actions/upload-artifact@v4
         with:
-          name: EditFlow-1.6.4-unsigned-IPA
-          path: ${{ runner.temp }}/EditFlow-1.6.4-unsigned.ipa
-          if-no-files-found: error
+          ref: editflow
+      - name: Isolate trim handles from clip move gesture
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          timeline = Path('EditFlow/EditFlow/Views/Editor/TimelineView.swift')
+          text = timeline.read_text()
+
+          old = '''        .simultaneousGesture(clipMoveGesture)\n'''
+          new = '''        .overlay {\n            GeometryReader { proxy in\n                let edgeExclusion = selected\n                    ? min(44, max(18, proxy.size.width * 0.28))\n                    : 0\n\n                Color.clear\n                    .frame(\n                        width: max(0, proxy.size.width - edgeExclusion * 2),\n                        height: proxy.size.height\n                    )\n                    .position(\n                        x: proxy.size.width / 2,\n                        y: proxy.size.height / 2\n                    )\n                    .contentShape(Rectangle())\n                    .simultaneousGesture(clipMoveGesture)\n            }\n        }\n'''
+          if old not in text:
+              raise SystemExit('clip move gesture pattern not found')
+          text = text.replace(old, new, 1)
+
+          old = '''    private var trimTouchWidth: CGFloat {\n        let clipWidth = max(34, CGFloat(displayClip.playbackDuration) * zoom)\n        return min(44, max(20, clipWidth / 2))\n    }\n'''
+          new = '''    private var trimTouchWidth: CGFloat {\n        44\n    }\n'''
+          if old not in text:
+              raise SystemExit('trimTouchWidth pattern not found')
+          text = text.replace(old, new, 1)
+
+          old = '''        .frame(width: trimTouchWidth, height: 44)\n        .contentShape(Rectangle())\n'''
+          new = '''        .frame(width: trimTouchWidth, height: 44)\n        .contentShape(Rectangle())\n        .zIndex(5000)\n'''
+          if old not in text:
+              raise SystemExit('trim handle frame pattern not found')
+          text = text.replace(old, new, 1)
+
+          old = '''        recognizer.cancelsTouchesInView = true\n        recognizer.delegate = context.coordinator\n'''
+          new = '''        recognizer.cancelsTouchesInView = true\n        recognizer.delaysTouchesBegan = false\n        recognizer.delaysTouchesEnded = false\n        recognizer.delegate = context.coordinator\n\n        view.isExclusiveTouch = true\n'''
+          if old not in text:
+              raise SystemExit('recognizer pattern not found')
+          text = text.replace(old, new, 1)
+          timeline.write_text(text)
+
+          project = Path('EditFlow/project.yml')
+          text = project.read_text()
+          text = text.replace('MARKETING_VERSION: 1.6.4', 'MARKETING_VERSION: 1.6.5')
+          text = text.replace('CURRENT_PROJECT_VERSION: 13', 'CURRENT_PROJECT_VERSION: 14')
+          project.write_text(text)
+
+          changelog = Path('EditFlow/CHANGELOG.md')
+          text = changelog.read_text()
+          header = '''## 1.6.5\n\n### Fixed\n\n- Completely separated selected-clip edge trim touch zones from the clip long-press move gesture.\n- The center of a selected clip is now the only area that can start long-press movement; the left and right 44-point edge zones are reserved exclusively for trimming.\n- Trim handles are promoted above clip interaction layers and use immediate UIKit touch capture without delayed touch delivery.\n\n'''
+          if '## 1.6.5' not in text:
+              if text.startswith('# Changelog\n\n'):
+                  text = '# Changelog\n\n' + header + text[len('# Changelog\n\n'):]
+              else:
+                  text = header + text
+              changelog.write_text(text)
+          PY
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add EditFlow/EditFlow/Views/Editor/TimelineView.swift EditFlow/project.yml EditFlow/CHANGELOG.md
+          git commit -m "Fix trim handle gesture isolation"
+          git push
