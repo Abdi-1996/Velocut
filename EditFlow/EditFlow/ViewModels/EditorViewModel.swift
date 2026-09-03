@@ -4,6 +4,12 @@ import Photos
 import PhotosUI
 import SwiftUI
 
+struct ClipMovePlacement: Equatable {
+    var timelineStart: Double
+    var layer: Int
+    var snapGuide: Double?
+}
+
 @MainActor
 final class EditorViewModel: ObservableObject {
     static let audioLayerBase = 100
@@ -13,6 +19,8 @@ final class EditorViewModel: ObservableObject {
     @Published var playhead: Double = 0
     @Published var player = AVPlayer()
     @Published private(set) var previewClipID: UUID?
+    @Published private(set) var isPlaying = false
+    @Published var isLooping = false
     @Published var isImporting = false
     @Published var isExporting = false
     @Published var exportProgress: Double = 0
@@ -155,10 +163,35 @@ final class EditorViewModel: ObservableObject {
         scrubTimeline(to: playhead + step)
     }
 
+    func togglePlayback() {
+        if isPlaying || player.rate > 0 {
+            pausePlayback()
+        } else {
+            startPlayback(at: playhead >= project.duration - 0.001 ? 0 : playhead)
+        }
+    }
+
+    func playFromStart() {
+        pausePlayback()
+        startPlayback(at: 0)
+    }
+
+    func toggleLoop() {
+        isLooping.toggle()
+        UISelectionFeedbackGenerator().selectionChanged()
+    }
+
+    func pausePlayback() {
+        resumePlaybackAfterPreviewBuild = false
+        playbackWasActive = false
+        isPlaying = false
+        player.pause()
+    }
+
     func scrubTimeline(to timelineTime: Double) {
         let clamped = min(max(0, timelineTime), max(0, project.duration))
+        pausePlayback()
         playhead = clamped
-        resumePlaybackAfterPreviewBuild = false
 
         let activeVisual = activeVisualClip(at: clamped)
 
@@ -167,8 +200,6 @@ final class EditorViewModel: ObservableObject {
             previewClipID = nil
             loadedPreviewClipID = nil
             loadedPreviewSpeedPoints = []
-            playbackWasActive = false
-            player.pause()
             player.replaceCurrentItem(with: nil)
             return
         }
@@ -179,8 +210,6 @@ final class EditorViewModel: ObservableObject {
             previewBuildTask?.cancel()
             loadedPreviewClipID = nil
             loadedPreviewSpeedPoints = []
-            playbackWasActive = false
-            player.pause()
             player.replaceCurrentItem(with: nil)
             return
         }
@@ -189,33 +218,45 @@ final class EditorViewModel: ObservableObject {
         ensurePreviewItem(for: clip, localTimeline: localTimeline)
     }
 
+    func previewClipMove(
+        id: UUID,
+        proposedStart: Double,
+        requestedLayer: Int,
+        snappingEnabled: Bool
+    ) -> ClipMovePlacement? {
+        guard let clip = project.clips.first(where: { $0.id == id }) else { return nil }
+        return resolvedMovePlacement(
+            for: clip,
+            proposedStart: proposedStart,
+            requestedLayer: requestedLayer,
+            snappingEnabled: snappingEnabled
+        )
+    }
+
+    func commitClipMove(id: UUID, placement: ClipMovePlacement) {
+        guard let index = project.clips.firstIndex(where: { $0.id == id }) else { return }
+        project.clips[index].timelineStart = max(0, placement.timelineStart)
+        project.clips[index].layer = normalizedLayer(placement.layer, for: project.clips[index].kind)
+        selectedClipID = id
+
+        invalidatePreview()
+        commit()
+        scrubTimeline(to: min(playhead, project.duration))
+    }
+
     func moveClip(
         id: UUID,
         to timelineStart: Double,
         layer requestedLayer: Int,
         snappingEnabled: Bool
     ) {
-        guard let index = project.clips.firstIndex(where: { $0.id == id }) else { return }
-        let originalLayer = project.clips[index].layer
-        let kind = project.clips[index].kind
-        let targetLayer = normalizedLayer(requestedLayer, for: kind)
-        let snappedStart = snappedMoveStart(
-            for: project.clips[index],
+        guard let placement = previewClipMove(
+            id: id,
             proposedStart: timelineStart,
+            requestedLayer: requestedLayer,
             snappingEnabled: snappingEnabled
-        )
-
-        project.clips[index].timelineStart = snappedStart
-        project.clips[index].layer = targetLayer
-        selectedClipID = id
-
-        if originalLayer == 0 || targetLayer == 0 {
-            compactPrimaryTrack()
-        }
-
-        invalidatePreview()
-        commit()
-        scrubTimeline(to: min(playhead, project.duration))
+        ) else { return }
+        commitClipMove(id: id, placement: placement)
     }
 
     func splitSelected(at timelineTime: Double) {
@@ -398,6 +439,7 @@ final class EditorViewModel: ObservableObject {
 
         if player.rate > 0 {
             playbackWasActive = true
+            if !isPlaying { isPlaying = true }
         }
 
         let local = min(max(0, time.seconds), clip.playbackDuration)
@@ -414,6 +456,7 @@ final class EditorViewModel: ObservableObject {
               let clip = previewClip else { return }
 
         playbackWasActive = false
+        isPlaying = false
         let frame = 1 / Double(max(1, project.frameRate))
         let nextTime = clip.timelineEnd + frame * 0.5
         let candidates = project.clips
@@ -424,7 +467,11 @@ final class EditorViewModel: ObservableObject {
             }
 
         guard let next = candidates.first else {
-            playhead = min(project.duration, clip.timelineEnd)
+            if isLooping {
+                startPlayback(at: 0)
+            } else {
+                playhead = min(project.duration, clip.timelineEnd)
+            }
             return
         }
 
@@ -435,12 +482,46 @@ final class EditorViewModel: ObservableObject {
         guard next.kind == .video else {
             player.pause()
             player.replaceCurrentItem(with: nil)
+            if isLooping, target >= project.duration - frame {
+                startPlayback(at: 0)
+            }
             return
         }
 
         resumePlaybackAfterPreviewBuild = true
         let localTimeline = max(0, target - next.timelineStart)
         ensurePreviewItem(for: next, localTimeline: localTimeline)
+    }
+
+    private func startPlayback(at timelineTime: Double) {
+        guard project.duration > 0 else { return }
+        let clamped = min(max(0, timelineTime), project.duration)
+        let clip = activeVisualClip(at: clamped) ?? nextVisualClip(atOrAfter: clamped)
+
+        guard let clip else {
+            if isLooping, clamped > 0 {
+                startPlayback(at: 0)
+            }
+            return
+        }
+
+        let frame = 1 / Double(max(1, project.frameRate))
+        let target = max(clip.timelineStart, min(clamped, max(clip.timelineStart, clip.timelineEnd - frame)))
+        playhead = target
+        previewClipID = clip.id
+
+        guard clip.kind == .video else {
+            player.pause()
+            player.replaceCurrentItem(with: nil)
+            isPlaying = false
+            return
+        }
+
+        resumePlaybackAfterPreviewBuild = true
+        playbackWasActive = true
+        isPlaying = true
+        let localTimeline = min(max(0, target - clip.timelineStart), clip.playbackDuration)
+        ensurePreviewItem(for: clip, localTimeline: localTimeline)
     }
 
     private func activeVisualClip(at time: Double) -> MediaClip? {
@@ -453,6 +534,16 @@ final class EditorViewModel: ObservableObject {
             .sorted {
                 if $0.layer == $1.layer { return $0.timelineStart > $1.timelineStart }
                 return $0.layer > $1.layer
+            }
+            .first
+    }
+
+    private func nextVisualClip(atOrAfter time: Double) -> MediaClip? {
+        project.clips
+            .filter { $0.kind != .audio && $0.timelineEnd > time }
+            .sorted { lhs, rhs in
+                if lhs.timelineStart == rhs.timelineStart { return lhs.layer > rhs.layer }
+                return lhs.timelineStart < rhs.timelineStart
             }
             .first
     }
@@ -494,6 +585,8 @@ final class EditorViewModel: ObservableObject {
                 seekPreview(to: currentLocal, resumePlayback: resumePlaybackAfterPreviewBuild)
             } catch {
                 guard !Task.isCancelled else { return }
+                isPlaying = false
+                playbackWasActive = false
                 errorMessage = "Не удалось подготовить предпросмотр: \(error.localizedDescription)"
             }
         }
@@ -507,6 +600,7 @@ final class EditorViewModel: ObservableObject {
                 guard let self, resumePlayback, self.resumePlaybackAfterPreviewBuild else { return }
                 self.resumePlaybackAfterPreviewBuild = false
                 self.playbackWasActive = true
+                self.isPlaying = true
                 self.player.play()
             }
         }
@@ -536,33 +630,46 @@ final class EditorViewModel: ObservableObject {
         return min(max(0, layer), Self.audioLayerBase - 1)
     }
 
-    private func snappedMoveStart(
+    private func resolvedMovePlacement(
         for clip: MediaClip,
         proposedStart: Double,
+        requestedLayer: Int,
         snappingEnabled: Bool
-    ) -> Double {
+    ) -> ClipMovePlacement {
         let fps = max(1, project.frameRate)
         let frame = 1 / Double(fps)
         var start = max(0, proposedStart)
         start = (start / frame).rounded() * frame
+        let targetLayer = normalizedLayer(requestedLayer, for: clip.kind)
 
-        guard snappingEnabled else { return start }
+        guard snappingEnabled else {
+            return ClipMovePlacement(timelineStart: start, layer: targetLayer, snapGuide: nil)
+        }
 
         let duration = clip.playbackDuration
-        var options: [(distance: Double, start: Double)] = []
-        let targets = project.clips
-            .filter { $0.id != clip.id }
-            .flatMap { [$0.timelineStart, $0.timelineEnd] } + [playhead]
+        var options: [(distance: Double, start: Double, guide: Double)] = []
+        let compatibleTargets = project.clips
+            .filter {
+                guard $0.id != clip.id else { return false }
+                if clip.kind == .audio { return $0.kind == .audio }
+                return $0.kind != .audio
+            }
+            .flatMap { [$0.timelineStart, $0.timelineEnd] }
+        let targets = compatibleTargets + [playhead]
 
         for target in targets {
-            options.append((abs(target - start), target))
-            options.append((abs(target - (start + duration)), target - duration))
+            options.append((abs(target - start), target, target))
+            options.append((abs(target - (start + duration)), target - duration, target))
         }
 
+        var guide: Double?
         if let best = options.min(by: { $0.distance < $1.distance }), best.distance <= 0.10 {
             start = max(0, best.start)
+            guide = best.guide
         }
-        return (start / frame).rounded() * frame
+
+        start = (start / frame).rounded() * frame
+        return ClipMovePlacement(timelineStart: start, layer: targetLayer, snapGuide: guide)
     }
 
     private func mutateSelected(_ change: (inout MediaClip) -> Void) {
