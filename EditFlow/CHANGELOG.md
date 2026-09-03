@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.6.1
+
+### Fixed
+
+- Timeline edge trim handles now track the finger in global coordinates so changing clip width no longer makes the drag jump or stall.
+- Increased the effective touch area of the left and right trim handles for more reliable finger control.
+- Trim preview now magnetically snaps to nearby compatible clip boundaries, preferring clips on the same track.
+- Magnetic trim snapping preserves the correct source trim point even on speed-ramped clips.
+- A short selection haptic fires only when the trim edge actually enters a snap target.
+- Timeline thumbnail generation now coalesces rapid trim updates and abandons stale requests instead of queuing expensive frame extraction for every finger movement.
+
+### Changed
+
+- Intermediate trim frames reuse the most recent thumbnails while the newest request is prepared, keeping edge trimming responsive.
+- Final trim data is still committed only when the finger is released.
+
 ## 1.6.0
 
 ### Added
