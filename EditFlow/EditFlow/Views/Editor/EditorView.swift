@@ -11,7 +11,7 @@ struct EditorView: View {
     @State private var gallerySelection: [PhotosPickerItem] = []
     @State private var selectedTool: EditorWorkspaceTool = .edit
     @State private var galleryTargetLayer = 0
-    @State private var isPlaying = false
+    @State private var isFullScreen = false
 
     private var importTypes: [UTType] { [.movie, .image, .audio] }
 
@@ -55,6 +55,9 @@ struct EditorView: View {
             ExportSheet(viewModel: viewModel)
                 .presentationDetents([.large])
         }
+        .fullScreenCover(isPresented: $isFullScreen) {
+            FullScreenPreview(viewModel: viewModel, isPresented: $isFullScreen)
+        }
         .alert(
             "EditFlow",
             isPresented: Binding(
@@ -67,7 +70,11 @@ struct EditorView: View {
             Text(viewModel.errorMessage ?? "")
         }
         .background(Color.black.ignoresSafeArea())
-        .onDisappear { viewModel.player.pause() }
+        .onDisappear {
+            if !isFullScreen {
+                viewModel.pausePlayback()
+            }
+        }
         .overlay {
             if viewModel.isImporting {
                 VStack(spacing: 12) {
@@ -103,22 +110,7 @@ struct EditorView: View {
     private var preview: some View {
         ZStack {
             Color(red: 0.055, green: 0.055, blue: 0.065)
-
-            Group {
-                if let clip = viewModel.previewClip,
-                   clip.kind == .image,
-                   let image = UIImage(contentsOfFile: viewModel.mediaURL(for: clip).path) {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFit()
-                        .padding(12)
-                } else if viewModel.player.currentItem == nil {
-                    EmptyPreview()
-                } else {
-                    PlayerContainer(player: viewModel.player)
-                }
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+            PreviewMediaSurface(viewModel: viewModel, imagePadding: 12)
 
             VStack {
                 HStack {
@@ -144,7 +136,10 @@ struct EditorView: View {
                 .padding(.horizontal, 8)
                 .padding(.top, 4)
 
-            PlaybackControlBar(viewModel: viewModel, isPlaying: $isPlaying)
+            PlaybackControlBar(
+                viewModel: viewModel,
+                fullScreenAction: { isFullScreen = true }
+            )
 
             if viewModel.hasInlineEditor {
                 InlineEditorSettings(viewModel: viewModel)
@@ -174,7 +169,10 @@ struct EditorView: View {
 
             VStack(spacing: 0) {
                 preview
-                PlaybackControlBar(viewModel: viewModel, isPlaying: $isPlaying)
+                PlaybackControlBar(
+                    viewModel: viewModel,
+                    fullScreenAction: { isFullScreen = true }
+                )
                 TimelineView(viewModel: viewModel)
                     .frame(height: 300)
                 ContextToolBar(
@@ -232,48 +230,170 @@ enum EditorWorkspaceTool: String, CaseIterable, Identifiable {
     }
 }
 
-private struct PlaybackControlBar: View {
+private struct PreviewMediaSurface: View {
     @ObservedObject var viewModel: EditorViewModel
-    @Binding var isPlaying: Bool
+    let imagePadding: CGFloat
 
     var body: some View {
-        HStack(spacing: 24) {
-            Text(viewModel.playhead.formattedDuration)
-                .frame(maxWidth: .infinity, alignment: .trailing)
+        Group {
+            if let clip = viewModel.previewClip,
+               clip.kind == .image,
+               let image = UIImage(contentsOfFile: viewModel.mediaURL(for: clip).path) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .padding(imagePadding)
+            } else if viewModel.player.currentItem == nil {
+                EmptyPreview()
+            } else {
+                PlayerContainer(player: viewModel.player)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipShape(Rectangle())
+    }
+}
+
+private struct PlaybackControlBar: View {
+    @ObservedObject var viewModel: EditorViewModel
+    let fullScreenAction: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            transportButton("backward.end.fill", label: "Воспроизвести с начала") {
+                viewModel.playFromStart()
+            }
+
+            transportButton(
+                viewModel.isPlaying ? "pause.fill" : "play.fill",
+                label: viewModel.isPlaying ? "Пауза" : "Воспроизвести",
+                emphasized: true
+            ) {
+                viewModel.togglePlayback()
+            }
 
             Button {
-                viewModel.stepFrame(-1)
+                viewModel.toggleLoop()
             } label: {
+                Image(systemName: "repeat")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(viewModel.isLooping ? Color.orange : Color.white.opacity(0.88))
+                    .frame(width: 32, height: 32)
+                    .background(viewModel.isLooping ? Color.orange.opacity(0.14) : Color.white.opacity(0.055))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(viewModel.isLooping ? "Отключить цикл" : "Включить цикл")
+
+            transportButton("arrow.up.left.and.arrow.down.right", label: "Полный экран") {
+                fullScreenAction()
+            }
+
+            Spacer(minLength: 4)
+
+            Button { viewModel.stepFrame(-1) } label: {
                 Image(systemName: "backward.frame.fill")
             }
+            .accessibilityLabel("Предыдущий кадр")
 
-            Button {
-                isPlaying.toggle()
-                if isPlaying {
-                    viewModel.player.play()
-                } else {
-                    viewModel.player.pause()
-                }
-            } label: {
-                Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                    .font(.title3)
-                    .frame(width: 32, height: 32)
-            }
-
-            Button {
-                viewModel.stepFrame(1)
-            } label: {
+            Button { viewModel.stepFrame(1) } label: {
                 Image(systemName: "forward.frame.fill")
             }
+            .accessibilityLabel("Следующий кадр")
 
-            Text(viewModel.project.duration.formattedDuration)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            Text("\(viewModel.playhead.formattedDuration) / \(viewModel.project.duration.formattedDuration)")
+                .font(.caption2.monospacedDigit().weight(.medium))
+                .foregroundStyle(.white.opacity(0.72))
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
         }
-        .font(.caption.monospacedDigit())
+        .padding(.horizontal, 10)
         .foregroundStyle(.white.opacity(0.9))
         .buttonStyle(.plain)
         .frame(height: 44)
         .background(Color(red: 0.07, green: 0.07, blue: 0.08))
+    }
+
+    private func transportButton(
+        _ systemName: String,
+        label: String,
+        emphasized: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: emphasized ? 18 : 15, weight: .semibold))
+                .frame(width: emphasized ? 36 : 32, height: 32)
+                .background(emphasized ? Color.white.opacity(0.10) : Color.white.opacity(0.055))
+        }
+        .accessibilityLabel(label)
+    }
+}
+
+private struct FullScreenPreview: View {
+    @ObservedObject var viewModel: EditorViewModel
+    @Binding var isPresented: Bool
+    @State private var controlsVisible = true
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+
+            PreviewMediaSurface(viewModel: viewModel, imagePadding: 0)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    withAnimation(.easeOut(duration: 0.16)) {
+                        controlsVisible.toggle()
+                    }
+                }
+
+            if controlsVisible {
+                VStack {
+                    HStack {
+                        Spacer()
+                        Button {
+                            isPresented = false
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.headline)
+                                .frame(width: 42, height: 42)
+                                .background(.ultraThinMaterial, in: Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Закрыть полный экран")
+                    }
+                    .padding()
+
+                    Spacer()
+
+                    HStack(spacing: 18) {
+                        Button { viewModel.playFromStart() } label: {
+                            Image(systemName: "backward.end.fill")
+                        }
+
+                        Button { viewModel.togglePlayback() } label: {
+                            Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
+                                .font(.title2)
+                                .frame(width: 44, height: 44)
+                        }
+
+                        Button { viewModel.toggleLoop() } label: {
+                            Image(systemName: "repeat")
+                                .foregroundStyle(viewModel.isLooping ? Color.orange : Color.white)
+                        }
+
+                        Text("\(viewModel.playhead.formattedDuration) / \(viewModel.project.duration.formattedDuration)")
+                            .font(.caption.monospacedDigit())
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 12)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .padding(.bottom, 28)
+                }
+                .foregroundStyle(.white)
+                .transition(.opacity)
+            }
+        }
+        .statusBarHidden(true)
     }
 }
 
