@@ -17,7 +17,7 @@ extension View {
     func glassCard() -> some View { modifier(GlassCardModifier()) }
 }
 
-private final class PlayerLayerView: UIView {
+final class PlayerLayerView: UIView {
     override static var layerClass: AnyClass { AVPlayerLayer.self }
 
     var playerLayer: AVPlayerLayer {
