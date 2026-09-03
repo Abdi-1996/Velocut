@@ -1335,8 +1335,6 @@ private struct EdgeTrimPanCaptureView: UIViewRepresentable {
             target: context.coordinator,
             action: #selector(Coordinator.handlePan(_:))
         )
-        recognizer.minimumNumberOfTouches = 1
-        recognizer.maximumNumberOfTouches = 1
         recognizer.cancelsTouchesInView = true
         recognizer.delaysTouchesBegan = false
         recognizer.delaysTouchesEnded = false
