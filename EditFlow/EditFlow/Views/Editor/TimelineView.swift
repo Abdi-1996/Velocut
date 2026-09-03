@@ -1,10 +1,12 @@
 import SwiftUI
+import UIKit
 
 struct TimelineView: View {
     @ObservedObject var viewModel: EditorViewModel
     @State private var zoom: CGFloat = 78
     @State private var panOriginTime: Double?
     @State private var snappingEnabled = true
+    @State private var movingClipID: UUID?
 
     private let labelWidth: CGFloat = 44
     private let rowHeight: CGFloat = 50
@@ -19,31 +21,12 @@ struct TimelineView: View {
                 VStack(spacing: 0) {
                     ruler(width: proxy.size.width, playheadX: playheadX)
                     if viewModel.project.clips.isEmpty {
-                        ContentUnavailableView(
-                            "Таймлайн пуст",
-                            systemImage: "timeline.selection",
-                            description: Text("Добавьте медиа, чтобы начать монтаж.")
-                        )
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        emptyTimeline(playheadX: playheadX, height: max(60, proxy.size.height - 28))
                     } else {
-                        ZStack(alignment: .topLeading) {
-                            Color.clear
-                                .contentShape(Rectangle())
-                                .gesture(timelinePanGesture)
-
-                            ScrollView(.vertical, showsIndicators: trackNumbers.count > 4) {
-                                VStack(spacing: rowSpacing) {
-                                    ForEach(trackNumbers, id: \.self) { layer in
-                                        track(layer, playheadX: playheadX)
-                                    }
-                                }
-                                .padding(.vertical, 8)
-                            }
-                            .gesture(timelinePanGesture)
-
-                            fixedPlayhead(x: playheadX)
-                                .allowsHitTesting(false)
-                        }
+                        timelineTracks(
+                            playheadX: playheadX,
+                            viewportHeight: max(60, proxy.size.height - 28)
+                        )
                     }
                 }
             }
@@ -52,8 +35,26 @@ struct TimelineView: View {
     }
 
     private var trackNumbers: [Int] {
-        let values = Set(viewModel.project.clips.map(\.layer))
-        return values.isEmpty ? [0] : values.sorted()
+        let visualLayers = viewModel.project.clips
+            .filter { $0.kind != .audio }
+            .map(\.layer)
+        let highestVisual = max(0, visualLayers.max() ?? 0)
+        let visualTop = min(8, max(1, highestVisual + 1))
+        let visuals = Array(stride(from: visualTop, through: 0, by: -1))
+
+        let audioIndices = viewModel.project.clips
+            .filter { $0.kind == .audio }
+            .map { max(0, $0.layer - EditorViewModel.audioLayerBase) }
+        let highestAudio = max(0, audioIndices.max() ?? 0)
+        let audioTop = min(7, audioIndices.isEmpty ? 0 : highestAudio + 1)
+        let audios = Array(0...audioTop).map { EditorViewModel.audioLayerBase + $0 }
+
+        return visuals + audios
+    }
+
+    private var movingClipLayer: Int? {
+        guard let movingClipID else { return nil }
+        return viewModel.project.clips.first(where: { $0.id == movingClipID })?.layer
     }
 
     private var timelineHeader: some View {
@@ -99,8 +100,8 @@ struct TimelineView: View {
         Canvas { context, size in
             let step = tickStep
             let visibleLeft = max(0, viewModel.playhead - Double(playheadX / zoom))
-            let visibleRight = min(
-                max(viewModel.project.duration, viewModel.playhead),
+            let visibleRight = max(
+                visibleLeft,
                 viewModel.playhead + Double((width - playheadX) / zoom)
             )
             let firstTick = floor(visibleLeft / step) * step
@@ -139,6 +140,47 @@ struct TimelineView: View {
         .gesture(timelinePanGesture)
     }
 
+    private func emptyTimeline(playheadX: CGFloat, height: CGFloat) -> some View {
+        ZStack(alignment: .topLeading) {
+            ContentUnavailableView(
+                "Таймлайн пуст",
+                systemImage: "timeline.selection",
+                description: Text("Добавьте медиа, чтобы начать монтаж.")
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            fixedPlayhead(x: playheadX, height: height)
+                .allowsHitTesting(false)
+        }
+        .contentShape(Rectangle())
+        .gesture(timelinePanGesture)
+    }
+
+    private func timelineTracks(playheadX: CGFloat, viewportHeight: CGFloat) -> some View {
+        ZStack(alignment: .topLeading) {
+            Color.clear
+                .contentShape(Rectangle())
+                .gesture(timelinePanGesture)
+
+            ScrollView(.vertical, showsIndicators: trackNumbers.count > 4) {
+                VStack(spacing: rowSpacing) {
+                    ForEach(trackNumbers, id: \.self) { layer in
+                        track(layer, playheadX: playheadX)
+                            .zIndex(movingClipLayer == layer ? 100 : 0)
+                    }
+                }
+                .padding(.vertical, 8)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .scrollDisabled(movingClipID != nil)
+            .simultaneousGesture(timelinePanGesture)
+
+            fixedPlayhead(x: playheadX, height: viewportHeight)
+                .allowsHitTesting(false)
+        }
+        .clipped()
+    }
+
     private func track(_ layer: Int, playheadX: CGFloat) -> some View {
         ZStack(alignment: .leading) {
             Rectangle()
@@ -151,6 +193,10 @@ struct TimelineView: View {
                     clip: clip,
                     selected: viewModel.selectedClipID == clip.id,
                     zoom: zoom,
+                    rowStride: rowHeight + rowSpacing,
+                    laneOrder: trackNumbers,
+                    snappingEnabled: snappingEnabled,
+                    movingClipID: $movingClipID,
                     viewModel: viewModel
                 )
                 .frame(width: max(34, CGFloat(clip.playbackDuration) * zoom), height: rowHeight - 8)
@@ -170,21 +216,19 @@ struct TimelineView: View {
                         Text(layerName(layer))
                             .font(.caption2.weight(.bold))
                             .foregroundStyle(.white.opacity(0.72))
-                        Image(systemName: layer == 2 ? "speaker.wave.1.fill" : "film.fill")
+                        Image(systemName: layer >= EditorViewModel.audioLayerBase ? "speaker.wave.1.fill" : "film.fill")
                             .font(.system(size: 9))
                             .foregroundStyle(.white.opacity(0.34))
                     }
                     .padding(.leading, 6)
                 }
+                .zIndex(200)
         }
         .frame(height: rowHeight)
-        .clipped()
     }
 
-    private func fixedPlayhead(x: CGFloat) -> some View {
-        let tracksHeight = CGFloat(trackNumbers.count) * rowHeight + CGFloat(max(0, trackNumbers.count - 1)) * rowSpacing + 16
-
-        return VStack(spacing: 0) {
+    private func fixedPlayhead(x: CGFloat, height: CGFloat) -> some View {
+        VStack(spacing: 0) {
             Image(systemName: "triangle.fill")
                 .font(.system(size: 11))
                 .rotationEffect(.degrees(180))
@@ -192,14 +236,15 @@ struct TimelineView: View {
                 .offset(y: -1)
             Rectangle()
                 .fill(Color.red)
-                .frame(width: 2, height: max(60, tracksHeight - 8))
+                .frame(width: 2, height: max(48, height - 12))
         }
-        .position(x: x, y: max(34, tracksHeight / 2))
+        .position(x: x, y: max(30, height / 2))
     }
 
     private var timelinePanGesture: some Gesture {
         DragGesture(minimumDistance: 2)
             .onChanged { value in
+                guard movingClipID == nil else { return }
                 if panOriginTime == nil {
                     panOriginTime = viewModel.playhead
                 }
@@ -243,7 +288,10 @@ struct TimelineView: View {
     }
 
     private func layerName(_ layer: Int) -> String {
-        layer == 2 ? "A1" : "V\(layer + 1)"
+        if layer >= EditorViewModel.audioLayerBase {
+            return "A\(layer - EditorViewModel.audioLayerBase + 1)"
+        }
+        return "V\(layer + 1)"
     }
 }
 
@@ -251,10 +299,16 @@ private struct TimelineClipView: View {
     let clip: MediaClip
     let selected: Bool
     let zoom: CGFloat
+    let rowStride: CGFloat
+    let laneOrder: [Int]
+    let snappingEnabled: Bool
+    @Binding var movingClipID: UUID?
     @ObservedObject var viewModel: EditorViewModel
 
     @State private var leftDragOrigin: MediaClip?
     @State private var rightDragOrigin: MediaClip?
+    @State private var isMoving = false
+    @State private var moveTranslation: CGSize = .zero
 
     var body: some View {
         HStack(spacing: 5) {
@@ -274,17 +328,33 @@ private struct TimelineClipView: View {
                 .stroke(selected ? Color.white : Color.white.opacity(0.08), lineWidth: selected ? 2 : 1)
         }
         .overlay(alignment: .leading) {
-            if selected {
+            if selected && !isMoving {
                 trimHandle(edge: .left)
                     .offset(x: -7)
             }
         }
         .overlay(alignment: .trailing) {
-            if selected {
+            if selected && !isMoving {
                 trimHandle(edge: .right)
                     .offset(x: 7)
             }
         }
+        .overlay(alignment: .topTrailing) {
+            if isMoving {
+                Text(targetTrackName)
+                    .font(.caption2.monospaced().weight(.bold))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(.black.opacity(0.7), in: Capsule())
+                    .padding(4)
+            }
+        }
+        .scaleEffect(isMoving ? 1.035 : 1)
+        .shadow(color: .black.opacity(isMoving ? 0.45 : 0), radius: 10, y: 5)
+        .offset(isMoving ? moveTranslation : .zero)
+        .zIndex(isMoving ? 1000 : 0)
+        .simultaneousGesture(clipMoveGesture)
+        .animation(.easeOut(duration: 0.12), value: isMoving)
     }
 
     private enum TrimEdge {
@@ -304,6 +374,76 @@ private struct TimelineClipView: View {
             .contentShape(Rectangle().inset(by: -10))
             .highPriorityGesture(trimGesture(edge: edge))
             .accessibilityLabel(edge == .left ? "Обрезать начало клипа" : "Обрезать конец клипа")
+    }
+
+    private var clipMoveGesture: some Gesture {
+        LongPressGesture(minimumDuration: 0.38, maximumDistance: 12)
+            .sequenced(before: DragGesture(minimumDistance: 0))
+            .onChanged { value in
+                switch value {
+                case .first(true):
+                    activateMoveIfNeeded()
+                case .second(true, let dragValue):
+                    activateMoveIfNeeded()
+                    if let dragValue {
+                        moveTranslation = dragValue.translation
+                    }
+                default:
+                    break
+                }
+            }
+            .onEnded { value in
+                defer { resetMoveState() }
+                guard case .second(true, let dragValue) = value,
+                      let dragValue else { return }
+
+                let rawStart = clip.timelineStart + Double(dragValue.translation.width / zoom)
+                let targetLayer = moveTargetLayer(for: dragValue.translation.height)
+                viewModel.moveClip(
+                    id: clip.id,
+                    to: rawStart,
+                    layer: targetLayer,
+                    snappingEnabled: snappingEnabled
+                )
+            }
+    }
+
+    private func activateMoveIfNeeded() {
+        guard !isMoving else { return }
+        isMoving = true
+        movingClipID = clip.id
+        viewModel.select(clip)
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+    }
+
+    private func resetMoveState() {
+        isMoving = false
+        moveTranslation = .zero
+        if movingClipID == clip.id {
+            movingClipID = nil
+        }
+    }
+
+    private func moveTargetLayer(for verticalTranslation: CGFloat) -> Int {
+        let validLanes = laneOrder.filter { layer in
+            clip.kind == .audio
+                ? layer >= EditorViewModel.audioLayerBase
+                : layer < EditorViewModel.audioLayerBase
+        }
+        guard !validLanes.isEmpty else { return clip.layer }
+
+        let sourceIndex = validLanes.firstIndex(of: clip.layer) ?? 0
+        let deltaRows = Int((verticalTranslation / max(1, rowStride)).rounded())
+        let targetIndex = min(max(0, sourceIndex + deltaRows), validLanes.count - 1)
+        return validLanes[targetIndex]
+    }
+
+    private var targetTrackName: String {
+        let layer = moveTargetLayer(for: moveTranslation.height)
+        if layer >= EditorViewModel.audioLayerBase {
+            return "A\(layer - EditorViewModel.audioLayerBase + 1)"
+        }
+        return "V\(layer + 1)"
     }
 
     private func trimGesture(edge: TrimEdge) -> some Gesture {
@@ -376,9 +516,9 @@ struct ClipActionBar: View {
                 action("Добавить", icon: "plus", action: importAction)
                 action("Разделить", icon: "scissors") { viewModel.splitSelected(at: viewModel.playhead) }
                     .disabled(viewModel.selectedClip == nil)
-                action("Скорость", icon: "gauge.with.dots.needle.67percent") { viewModel.showingSpeedRamp = true }
+                action("Скорость", icon: "gauge.with.dots.needle.67percent") { viewModel.openSpeedRamp() }
                     .disabled(viewModel.selectedClip == nil)
-                action("Эффекты", icon: "slider.horizontal.3") { viewModel.showingClipTools = true }
+                action("Эффекты", icon: "slider.horizontal.3") { viewModel.openClipTools() }
                     .disabled(viewModel.selectedClip == nil)
                 action("Копия", icon: "plus.square.on.square") { viewModel.duplicateSelected() }
                     .disabled(viewModel.selectedClip == nil)
