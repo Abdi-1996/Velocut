@@ -297,6 +297,44 @@ struct TimelineView: View {
                         ? 1000
                         : 30
                 )
+
+
+                if viewModel.selectedClipID == sourceClip.id,
+                   movingClipID != sourceClip.id {
+                    TimelineExternalTrimHandle(
+                        edge: .left,
+                        sourceClip: sourceClip,
+                        zoom: zoom,
+                        snappingEnabled: snappingEnabled,
+                        trimmingClipID: $trimmingClipID,
+                        trimPreviewClip: $trimPreviewClip,
+                        trimSnapGuide: $trimSnapGuide,
+                        viewModel: viewModel
+                    )
+                    .frame(width: 44, height: 44)
+                    .offset(
+                        x: playheadX + CGFloat(displayClip.timelineStart - viewModel.playhead) * zoom - 22,
+                        y: 3
+                    )
+                    .zIndex(6000)
+
+                    TimelineExternalTrimHandle(
+                        edge: .right,
+                        sourceClip: sourceClip,
+                        zoom: zoom,
+                        snappingEnabled: snappingEnabled,
+                        trimmingClipID: $trimmingClipID,
+                        trimPreviewClip: $trimPreviewClip,
+                        trimSnapGuide: $trimSnapGuide,
+                        viewModel: viewModel
+                    )
+                    .frame(width: 44, height: 44)
+                    .offset(
+                        x: playheadX + CGFloat(displayClip.timelineEnd - viewModel.playhead) * zoom - 22,
+                        y: 3
+                    )
+                    .zIndex(6000)
+                }
             }
 
             Rectangle()
@@ -510,16 +548,6 @@ private struct TimelineClipView: View {
                         : (selected ? Color.white : Color.white.opacity(0.14)),
                     lineWidth: isMoving ? 2 : (selected ? 2 : 1)
                 )
-        }
-        .overlay(alignment: .leading) {
-            if selected && !isMoving {
-                trimHandle(edge: .left)
-            }
-        }
-        .overlay(alignment: .trailing) {
-            if selected && !isMoving {
-                trimHandle(edge: .right)
-            }
         }
         .overlay(alignment: .topTrailing) {
             if isMoving, let placement = movePreview?.placement {
@@ -1035,6 +1063,254 @@ private struct TimelineClipView: View {
     }
 }
 
+private struct TimelineExternalTrimHandle: View {
+    enum Edge {
+        case left
+        case right
+    }
+
+    let edge: Edge
+    let sourceClip: MediaClip
+    let zoom: CGFloat
+    let snappingEnabled: Bool
+
+    @Binding var trimmingClipID: UUID?
+    @Binding var trimPreviewClip: MediaClip?
+    @Binding var trimSnapGuide: Double?
+
+    @ObservedObject var viewModel: EditorViewModel
+
+    @State private var trimOrigin: MediaClip?
+    @State private var lastSnapGuide: Double?
+
+    var body: some View {
+        ZStack {
+            EdgeTrimPanCaptureView(
+                onBegan: beginTrim,
+                onChanged: updateTrim,
+                onEnded: endTrim
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            Rectangle()
+                .fill(handleColor)
+                .frame(width: 15, height: 38)
+                .overlay {
+                    Capsule()
+                        .fill(.white.opacity(0.96))
+                        .frame(width: 2.5, height: 20)
+                }
+                .allowsHitTesting(false)
+        }
+        .contentShape(Rectangle())
+        .transaction { transaction in
+            transaction.animation = nil
+        }
+        .accessibilityLabel(edge == .left ? "Обрезать начало клипа" : "Обрезать конец клипа")
+    }
+
+    private func beginTrim() {
+        guard trimmingClipID == nil || trimmingClipID == sourceClip.id else { return }
+
+        trimOrigin = sourceClip
+        trimmingClipID = sourceClip.id
+        trimPreviewClip = sourceClip
+        trimSnapGuide = nil
+        lastSnapGuide = nil
+
+        viewModel.select(sourceClip)
+        viewModel.pausePlayback()
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+
+    private func updateTrim(_ deltaX: CGFloat) {
+        guard trimmingClipID == sourceClip.id,
+              let origin = trimOrigin else { return }
+
+        let result = resolvedTrim(origin: origin, deltaX: deltaX)
+        trimPreviewClip = result.clip
+        trimSnapGuide = result.guide
+
+        if result.guide != lastSnapGuide {
+            if result.guide != nil {
+                UISelectionFeedbackGenerator().selectionChanged()
+            }
+            lastSnapGuide = result.guide
+        }
+    }
+
+    private func endTrim() {
+        guard trimmingClipID == sourceClip.id else {
+            resetState()
+            return
+        }
+
+        viewModel.commitNonRippleTrim(trimPreviewClip ?? sourceClip)
+        resetState()
+    }
+
+    private func resetState() {
+        trimOrigin = nil
+        lastSnapGuide = nil
+
+        if trimmingClipID == sourceClip.id {
+            trimmingClipID = nil
+        }
+        if trimPreviewClip?.id == sourceClip.id {
+            trimPreviewClip = nil
+        }
+        trimSnapGuide = nil
+    }
+
+    private func resolvedTrim(
+        origin: MediaClip,
+        deltaX: CGFloat
+    ) -> (clip: MediaClip, guide: Double?) {
+        let timelineDelta = Double(deltaX / max(1, zoom))
+
+        switch edge {
+        case .left:
+            var shortest = origin
+            shortest.trimStart = max(0, origin.trimEnd - 0.05)
+
+            var longest = origin
+            longest.trimStart = 0
+
+            let minimumBoundary = origin.timelineEnd - longest.playbackDuration
+            let maximumBoundary = origin.timelineEnd - shortest.playbackDuration
+            let proposedBoundary = origin.timelineStart + timelineDelta
+            let snapped = snappedBoundary(
+                proposed: proposedBoundary,
+                minimum: minimumBoundary,
+                maximum: maximumBoundary
+            )
+
+            let targetDuration = origin.timelineEnd - snapped.boundary
+            var resolved = origin
+            resolved.trimStart = trimStart(
+                forPlaybackDuration: targetDuration,
+                origin: origin
+            )
+            resolved.timelineStart = origin.timelineEnd - resolved.playbackDuration
+            return (resolved, snapped.guide)
+
+        case .right:
+            var shortest = origin
+            shortest.trimEnd = min(origin.sourceDuration, origin.trimStart + 0.05)
+
+            var longest = origin
+            longest.trimEnd = origin.sourceDuration
+
+            let minimumBoundary = origin.timelineStart + shortest.playbackDuration
+            let maximumBoundary = origin.timelineStart + longest.playbackDuration
+            let proposedBoundary = origin.timelineEnd + timelineDelta
+            let snapped = snappedBoundary(
+                proposed: proposedBoundary,
+                minimum: minimumBoundary,
+                maximum: maximumBoundary
+            )
+
+            let targetDuration = snapped.boundary - origin.timelineStart
+            var resolved = origin
+            resolved.trimEnd = trimEnd(
+                forPlaybackDuration: targetDuration,
+                origin: origin
+            )
+            resolved.timelineStart = origin.timelineStart
+            return (resolved, snapped.guide)
+        }
+    }
+
+    private func snappedBoundary(
+        proposed: Double,
+        minimum: Double,
+        maximum: Double
+    ) -> (boundary: Double, guide: Double?) {
+        let clamped = min(max(minimum, proposed), maximum)
+        guard snappingEnabled else { return (clamped, nil) }
+
+        let compatible = viewModel.project.clips.filter {
+            guard $0.id != sourceClip.id else { return false }
+            return sourceClip.kind == .audio ? $0.kind == .audio : $0.kind != .audio
+        }
+
+        let sameLayerTargets = compatible
+            .filter { $0.layer == sourceClip.layer }
+            .flatMap { [$0.timelineStart, $0.timelineEnd] }
+        let otherTargets = compatible
+            .filter { $0.layer != sourceClip.layer }
+            .flatMap { [$0.timelineStart, $0.timelineEnd] }
+
+        let threshold = min(0.20, max(0.04, Double(12 / max(1, zoom))))
+
+        if let nearest = sameLayerTargets.min(by: { abs($0 - clamped) < abs($1 - clamped) }),
+           abs(nearest - clamped) <= threshold,
+           nearest >= minimum,
+           nearest <= maximum {
+            return (nearest, nearest)
+        }
+
+        if let nearest = otherTargets.min(by: { abs($0 - clamped) < abs($1 - clamped) }),
+           abs(nearest - clamped) <= threshold,
+           nearest >= minimum,
+           nearest <= maximum {
+            return (nearest, nearest)
+        }
+
+        return (clamped, nil)
+    }
+
+    private func trimStart(
+        forPlaybackDuration target: Double,
+        origin: MediaClip
+    ) -> Double {
+        var low = 0.0
+        var high = max(0, origin.trimEnd - 0.05)
+
+        for _ in 0..<24 {
+            let middle = (low + high) * 0.5
+            var candidate = origin
+            candidate.trimStart = middle
+            if candidate.playbackDuration > target {
+                low = middle
+            } else {
+                high = middle
+            }
+        }
+
+        return min(max(0, (low + high) * 0.5), origin.trimEnd - 0.05)
+    }
+
+    private func trimEnd(
+        forPlaybackDuration target: Double,
+        origin: MediaClip
+    ) -> Double {
+        var low = min(origin.sourceDuration, origin.trimStart + 0.05)
+        var high = origin.sourceDuration
+
+        for _ in 0..<24 {
+            let middle = (low + high) * 0.5
+            var candidate = origin
+            candidate.trimEnd = middle
+            if candidate.playbackDuration < target {
+                low = middle
+            } else {
+                high = middle
+            }
+        }
+
+        return max(origin.trimStart + 0.05, min(origin.sourceDuration, (low + high) * 0.5))
+    }
+
+    private var handleColor: Color {
+        switch sourceClip.kind {
+        case .video: .blue
+        case .image: .teal
+        case .audio: .green
+        }
+    }
+}
+
 private struct EdgeTrimPanCaptureView: UIViewRepresentable {
     let onBegan: () -> Void
     let onChanged: (CGFloat) -> Void
@@ -1055,7 +1331,7 @@ private struct EdgeTrimPanCaptureView: UIViewRepresentable {
         view.isExclusiveTouch = true
         view.isMultipleTouchEnabled = false
 
-        let recognizer = EdgeTrimPanGestureRecognizer(
+        let recognizer = EdgeTrimImmediateDragRecognizer(
             target: context.coordinator,
             action: #selector(Coordinator.handlePan(_:))
         )
@@ -1092,19 +1368,19 @@ private struct EdgeTrimPanCaptureView: UIViewRepresentable {
         }
 
         @objc
-        func handlePan(_ recognizer: UIPanGestureRecognizer) {
-            let translation = recognizer.translation(in: recognizer.view?.window)
+        func handlePan(_ recognizer: EdgeTrimImmediateDragRecognizer) {
+            let translationX = recognizer.translationX
 
             switch recognizer.state {
             case .began:
                 onBegan()
-                onChanged(translation.x)
+                onChanged(translationX)
 
             case .changed:
-                onChanged(translation.x)
+                onChanged(translationX)
 
             case .ended:
-                onChanged(translation.x)
+                onChanged(translationX)
                 onEnded()
 
             case .cancelled, .failed:
@@ -1124,7 +1400,44 @@ private struct EdgeTrimPanCaptureView: UIViewRepresentable {
     }
 }
 
-private final class EdgeTrimPanGestureRecognizer: UIPanGestureRecognizer {
+private final class EdgeTrimImmediateDragRecognizer: UIGestureRecognizer {
+    private var startX: CGFloat?
+    private(set) var translationX: CGFloat = 0
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        guard state == .possible, touches.count == 1, let touch = touches.first else {
+            state = .failed
+            return
+        }
+
+        startX = touch.location(in: view?.window).x
+        translationX = 0
+        state = .began
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+        guard let startX, let touch = touches.first else { return }
+        translationX = touch.location(in: view?.window).x - startX
+        state = .changed
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+        if let startX, let touch = touches.first {
+            translationX = touch.location(in: view?.window).x - startX
+        }
+        state = .ended
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+        state = .cancelled
+    }
+
+    override func reset() {
+        startX = nil
+        translationX = 0
+        super.reset()
+    }
+
     override func canPrevent(_ preventedGestureRecognizer: UIGestureRecognizer) -> Bool {
         true
     }

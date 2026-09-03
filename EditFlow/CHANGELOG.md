@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.6.7
+
+### Fixed
+
+- Removed the selected clip trim handles from inside TimelineClipView and moved them to a dedicated top-level interaction layer on each timeline track.
+- Edge trim controls now sit above clip tap, long-press movement, track labels, and timeline scrubbing layers so their touch area is no longer covered by SwiftUI overlays.
+- Replaced the threshold-based edge pan with an immediate custom UIGestureRecognizer that enters Trim on touch-down and owns the finger until release.
+- Left and right trim handles update the visual clip boundary continuously and commit the final trim once on release.
+- Magnetic snapping and haptic feedback remain available, including accurate boundary resolution for speed-ramped clips.
+
 ## 1.6.6
 
 ### Fixed
