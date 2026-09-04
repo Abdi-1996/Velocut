@@ -162,11 +162,8 @@ struct EditorView: View {
             )
 
             TimelineView(viewModel: viewModel)
-                .frame(
-                    minHeight: viewModel.hasInlineEditor ? 145 : 185,
-                    idealHeight: viewModel.hasInlineEditor ? 165 : 220,
-                    maxHeight: viewModel.hasInlineEditor ? 185 : 260
-                )
+                .frame(minHeight: viewModel.hasInlineEditor ? 145 : 185, maxHeight: .infinity)
+                .layoutPriority(1)
 
             Group {
                 if viewModel.hasInlineEditor {
@@ -455,6 +452,7 @@ private struct FullScreenPreview: View {
 
 private struct ContextualEditorBar: View {
     @ObservedObject var viewModel: EditorViewModel
+    @State private var confirmingTrackDeletion = false
     let galleryAction: () -> Void
     let overlayAction: () -> Void
     let audioGalleryAction: () -> Void
@@ -463,7 +461,20 @@ private struct ContextualEditorBar: View {
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 4) {
-                if let clip = viewModel.selectedClip {
+                if let trackLayer = viewModel.selectedTrackLayer {
+                    item("Назад", "chevron.left") {
+                        viewModel.deselectTrack()
+                    }
+
+                    let trackName = viewModel.selectedTrackName ?? (trackLayer >= EditorViewModel.audioLayerBase ? "A" : "V")
+                    item("Удалить \(trackName)", "trash", role: .destructive) {
+                        if viewModel.selectedTrackClipCount == 0 {
+                            viewModel.deleteSelectedTrack()
+                        } else {
+                            confirmingTrackDeletion = true
+                        }
+                    }
+                } else if let clip = viewModel.selectedClip {
                     item("Назад", "chevron.left") {
                         viewModel.deselectClip()
                     }
@@ -541,6 +552,19 @@ private struct ContextualEditorBar: View {
         .frame(height: 66)
         .background(.ultraThinMaterial)
         .animation(.easeOut(duration: 0.16), value: viewModel.selectedClipID)
+        .animation(.easeOut(duration: 0.16), value: viewModel.selectedTrackLayer)
+        .confirmationDialog(
+            "Удалить дорожку \(viewModel.selectedTrackName ?? "")?",
+            isPresented: $confirmingTrackDeletion,
+            titleVisibility: .visible
+        ) {
+            Button("Удалить дорожку", role: .destructive) {
+                viewModel.deleteSelectedTrack()
+            }
+            Button("Отмена", role: .cancel) {}
+        } message: {
+            Text("Все клипы на этой дорожке (\(viewModel.selectedTrackClipCount)) будут удалены.")
+        }
     }
 
     private func item(

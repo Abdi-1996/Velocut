@@ -25,6 +25,7 @@ final class EditorViewModel: ObservableObject {
 
     @Published var project: EditProject
     @Published var selectedClipID: UUID?
+    @Published var selectedTrackLayer: Int?
     @Published var playhead: Double = 0
     @Published var player = AVPlayer()
     @Published private(set) var previewClipID: UUID?
@@ -209,12 +210,63 @@ final class EditorViewModel: ObservableObject {
         if selectedClipID != clip.id {
             closeInlineEditor()
         }
+        selectedTrackLayer = nil
         selectedClipID = clip.id
     }
 
     func deselectClip() {
         closeInlineEditor()
         selectedClipID = nil
+    }
+
+    var selectedTrackName: String? {
+        guard let layer = selectedTrackLayer else { return nil }
+        if layer >= Self.audioLayerBase {
+            return "A\(layer - Self.audioLayerBase + 1)"
+        }
+        return "V\(layer + 1)"
+    }
+
+    var selectedTrackClipCount: Int {
+        guard let layer = selectedTrackLayer else { return 0 }
+        return project.clips.filter { $0.layer == layer }.count
+    }
+
+    func selectTrack(_ layer: Int) {
+        closeInlineEditor()
+        selectedClipID = nil
+        selectedTrackLayer = layer
+        UISelectionFeedbackGenerator().selectionChanged()
+    }
+
+    func deselectTrack() {
+        selectedTrackLayer = nil
+    }
+
+    func deleteSelectedTrack() {
+        guard let layer = selectedTrackLayer else { return }
+        let deletingAudio = layer >= Self.audioLayerBase
+
+        project.clips.removeAll { $0.layer == layer }
+
+        for index in project.clips.indices {
+            if deletingAudio {
+                if project.clips[index].kind == .audio,
+                   project.clips[index].layer > layer {
+                    project.clips[index].layer -= 1
+                }
+            } else if project.clips[index].kind != .audio,
+                      project.clips[index].layer > layer {
+                project.clips[index].layer -= 1
+            }
+        }
+
+        selectedTrackLayer = nil
+        selectedClipID = nil
+        closeInlineEditor()
+        invalidatePreview()
+        commit()
+        scrubTimeline(to: min(playhead, project.duration))
     }
 
     func openSpeedRamp() {

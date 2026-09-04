@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.9.0
+
+### Added
+
+- Track names (`V1`, `V2`, `A1`, and so on) are now tappable and select the complete track.
+- The contextual bottom panel now offers destructive whole-track deletion; occupied tracks require confirmation and all clips on that track are removed together.
+- Dragging a clip beyond the current highest visual lane creates a temporary new lane only while needed; releasing the clip there makes that lane real.
+
+### Changed
+
+- Removed the permanently empty extra top visual/audio lane. The timeline now displays only the lanes required by actual project content plus a temporary move destination when needed.
+- The contextual bottom surface is pinned to the bottom of the iPhone editor by allowing the timeline to consume the remaining vertical workspace.
+- Track-name columns are now fixed interaction zones. Clip bodies, move previews, trim handles, and magnetic snap guides are masked so they cannot draw over `V/A` labels.
+- Deleting a track closes gaps by renumbering higher tracks of the same media family while preserving clip timeline positions.
+
 ## 1.8.1
 
 ### Fixed

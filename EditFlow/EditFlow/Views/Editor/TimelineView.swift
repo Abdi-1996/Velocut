@@ -75,19 +75,36 @@ struct TimelineView: View {
     }
 
     private var trackNumbers: [Int] {
-        let visualLayers = viewModel.project.clips
+        var visualLayers = viewModel.project.clips
             .filter { $0.kind != .audio }
             .map(\.layer)
-        let highestVisual = max(0, visualLayers.max() ?? 0)
-        let visualTop = min(8, max(1, highestVisual + 1))
-        let visuals = Array(stride(from: visualTop, through: 0, by: -1))
-
-        let audioIndices = viewModel.project.clips
+        var audioIndices = viewModel.project.clips
             .filter { $0.kind == .audio }
             .map { max(0, $0.layer - EditorViewModel.audioLayerBase) }
-        let highestAudio = max(0, audioIndices.max() ?? 0)
-        let audioTop = min(7, audioIndices.isEmpty ? 0 : highestAudio + 1)
-        let audios = Array(0...audioTop).map { EditorViewModel.audioLayerBase + $0 }
+
+        if let previewLayer = movePreview?.placement.layer {
+            if previewLayer >= EditorViewModel.audioLayerBase {
+                audioIndices.append(max(0, previewLayer - EditorViewModel.audioLayerBase))
+            } else {
+                visualLayers.append(max(0, previewLayer))
+            }
+        }
+
+        let visuals: [Int]
+        if let highestVisual = visualLayers.max() {
+            let visualTop = min(8, max(0, highestVisual))
+            visuals = Array(stride(from: visualTop, through: 0, by: -1))
+        } else {
+            visuals = []
+        }
+
+        let audios: [Int]
+        if let highestAudio = audioIndices.max() {
+            let audioTop = min(7, max(0, highestAudio))
+            audios = Array(0...audioTop).map { EditorViewModel.audioLayerBase + $0 }
+        } else {
+            audios = []
+        }
 
         return visuals + audios
     }
@@ -219,6 +236,12 @@ struct TimelineView: View {
                     .fill(Color.red.opacity(0.9))
                     .frame(width: 1.5, height: viewportHeight)
                     .position(x: guideX, y: viewportHeight / 2)
+                    .mask(alignment: .leading) {
+                        HStack(spacing: 0) {
+                            Color.clear.frame(width: labelWidth)
+                            Rectangle().fill(.white)
+                        }
+                    }
                     .allowsHitTesting(false)
             }
 
@@ -228,6 +251,12 @@ struct TimelineView: View {
                     .fill(Color.orange.opacity(0.95))
                     .frame(width: 1.5, height: viewportHeight)
                     .position(x: guideX, y: viewportHeight / 2)
+                    .mask(alignment: .leading) {
+                        HStack(spacing: 0) {
+                            Color.clear.frame(width: labelWidth)
+                            Rectangle().fill(.white)
+                        }
+                    }
                     .allowsHitTesting(false)
             }
 
@@ -246,13 +275,18 @@ struct TimelineView: View {
     private func track(_ layer: Int, playheadX: CGFloat) -> some View {
         ZStack(alignment: .leading) {
             Rectangle()
-                .fill(movePreview?.placement.layer == layer ? Color.red.opacity(0.055) : Color.white.opacity(0.025))
+                .fill(
+                    viewModel.selectedTrackLayer == layer
+                        ? Color.blue.opacity(0.10)
+                        : (movePreview?.placement.layer == layer ? Color.red.opacity(0.055) : Color.white.opacity(0.025))
+                )
                 .padding(.leading, labelWidth)
                 .allowsHitTesting(false)
 
-            if let preview = movePreview,
-               preview.placement.layer == layer,
-               let clip = viewModel.project.clips.first(where: { $0.id == preview.clipID }) {
+            ZStack(alignment: .leading) {
+                if let preview = movePreview,
+                   preview.placement.layer == layer,
+                   let clip = viewModel.project.clips.first(where: { $0.id == preview.clipID }) {
                 Rectangle()
                     .fill(Color.red.opacity(0.10))
                     .overlay {
@@ -336,22 +370,53 @@ struct TimelineView: View {
                 }
             }
 
-            Rectangle()
-                .fill(Color(red: 0.072, green: 0.072, blue: 0.082))
-                .frame(width: labelWidth)
-                .overlay(alignment: .leading) {
-                    HStack(spacing: 4) {
-                        Text(layerName(layer))
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(.white.opacity(0.72))
-
-                        Image(systemName: layer >= EditorViewModel.audioLayerBase ? "speaker.wave.1.fill" : "film.fill")
-                            .font(.system(size: 9))
-                            .foregroundStyle(.white.opacity(0.34))
-                    }
-                    .padding(.leading, 6)
+            }
+            .mask(alignment: .leading) {
+                HStack(spacing: 0) {
+                    Color.clear
+                        .frame(width: labelWidth)
+                    Rectangle()
+                        .fill(.white)
                 }
-                .zIndex(2000)
+            }
+
+            Button {
+                guard movingClipID == nil, trimmingClipID == nil, !isPinching else { return }
+                viewModel.selectTrack(layer)
+            } label: {
+                Rectangle()
+                    .fill(
+                        viewModel.selectedTrackLayer == layer
+                            ? Color.blue.opacity(0.28)
+                            : Color(red: 0.072, green: 0.072, blue: 0.082)
+                    )
+                    .frame(width: labelWidth)
+                    .overlay(alignment: .leading) {
+                        HStack(spacing: 4) {
+                            Text(layerName(layer))
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(
+                                    viewModel.selectedTrackLayer == layer
+                                        ? Color.white
+                                        : Color.white.opacity(0.72)
+                                )
+
+                            Image(systemName: layer >= EditorViewModel.audioLayerBase ? "speaker.wave.1.fill" : "film.fill")
+                                .font(.system(size: 9))
+                                .foregroundStyle(
+                                    viewModel.selectedTrackLayer == layer
+                                        ? Color.white.opacity(0.82)
+                                        : Color.white.opacity(0.34)
+                                )
+                        }
+                        .padding(.leading, 6)
+                    }
+            }
+            .buttonStyle(.plain)
+            .frame(width: labelWidth, height: rowHeight)
+            .contentShape(Rectangle())
+            .accessibilityLabel("Выбрать дорожку \(layerName(layer))")
+            .zIndex(10000)
         }
         .frame(height: rowHeight)
     }
@@ -1050,26 +1115,40 @@ private struct TimelineClipView: View {
     }
 
     private func moveTargetLayer(for verticalTranslation: CGFloat) -> Int {
-        let validLanes = laneOrder.filter { layer in
-            sourceClip.kind == .audio
-                ? layer >= EditorViewModel.audioLayerBase
-                : layer < EditorViewModel.audioLayerBase
-        }
-
-        guard !validLanes.isEmpty else {
-            return sourceClip.layer
-        }
-
-        let sourceIndex = validLanes.firstIndex(of: sourceClip.layer) ?? 0
         let deltaRows = Int(
             (verticalTranslation / max(1, rowStride)).rounded()
         )
-        let targetIndex = min(
-            max(0, sourceIndex + deltaRows),
-            validLanes.count - 1
-        )
 
-        return validLanes[targetIndex]
+        if sourceClip.kind == .audio {
+            let highestIndex = viewModel.project.clips
+                .filter { $0.kind == .audio }
+                .map { max(0, $0.layer - EditorViewModel.audioLayerBase) }
+                .max() ?? max(0, sourceClip.layer - EditorViewModel.audioLayerBase)
+            let lanes = Array(0...max(0, highestIndex)).map { EditorViewModel.audioLayerBase + $0 }
+            let sourceIndex = lanes.firstIndex(of: sourceClip.layer) ?? 0
+            let rawTargetIndex = sourceIndex + deltaRows
+
+            if rawTargetIndex >= lanes.count, highestIndex < 7 {
+                return EditorViewModel.audioLayerBase + highestIndex + 1
+            }
+
+            return lanes[min(max(0, rawTargetIndex), lanes.count - 1)]
+        }
+
+        let highestVisual = viewModel.project.clips
+            .filter { $0.kind != .audio }
+            .map(\.layer)
+            .max() ?? sourceClip.layer
+        let visualTop = min(8, max(0, highestVisual))
+        let lanes = Array(stride(from: visualTop, through: 0, by: -1))
+        let sourceIndex = lanes.firstIndex(of: sourceClip.layer) ?? 0
+        let rawTargetIndex = sourceIndex + deltaRows
+
+        if rawTargetIndex < 0, visualTop < 8 {
+            return visualTop + 1
+        }
+
+        return lanes[min(max(0, rawTargetIndex), lanes.count - 1)]
     }
 
     private func trackName(_ layer: Int) -> String {
