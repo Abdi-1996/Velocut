@@ -1,5 +1,5 @@
 name: EditFlow iOS Build
-# Clean CI for EditFlow 1.9.0 track management
+# Final clean CI for EditFlow 1.9.0 track management
 
 on:
   workflow_dispatch:
@@ -10,7 +10,7 @@ on:
       - ".github/workflows/build-editflow.yml"
 
 concurrency:
-  group: editflow-1-9-0-stage-${{ github.ref }}
+  group: editflow-1-9-0-final-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
