@@ -12,7 +12,6 @@ struct EditorView: View {
     @State private var showingAudioVideoGallery = false
     @State private var audioVideoSelection: [PhotosPickerItem] = []
     @State private var isExtractingAudio = false
-    @State private var selectedTool: EditorWorkspaceTool = .edit
     @State private var galleryTargetLayer = 0
     @State private var isFullScreen = false
 
@@ -149,7 +148,11 @@ struct EditorView: View {
     private var iPhoneLayout: some View {
         VStack(spacing: 0) {
             preview
-                .frame(minHeight: 225, idealHeight: 280, maxHeight: 330)
+                .frame(
+                    minHeight: viewModel.hasInlineEditor ? 190 : 225,
+                    idealHeight: viewModel.hasInlineEditor ? 220 : 280,
+                    maxHeight: viewModel.hasInlineEditor ? 250 : 330
+                )
                 .padding(.horizontal, 8)
                 .padding(.top, 4)
 
@@ -158,21 +161,30 @@ struct EditorView: View {
                 fullScreenAction: { isFullScreen = true }
             )
 
-            if viewModel.hasInlineEditor {
-                InlineEditorSettings(viewModel: viewModel)
-                    .frame(minHeight: 245, idealHeight: 300, maxHeight: 360)
-            } else {
-                TimelineView(viewModel: viewModel)
-                    .frame(minHeight: 185, idealHeight: 220)
-
-                ContextualEditorBar(
-                    viewModel: viewModel,
-                    galleryAction: openMainGallery,
-                    overlayAction: openOverlayGallery,
-                    audioGalleryAction: { showingAudioVideoGallery = true },
-                    fileAction: { showingImporter = true }
+            TimelineView(viewModel: viewModel)
+                .frame(
+                    minHeight: viewModel.hasInlineEditor ? 145 : 185,
+                    idealHeight: viewModel.hasInlineEditor ? 165 : 220,
+                    maxHeight: viewModel.hasInlineEditor ? 185 : 260
                 )
+
+            Group {
+                if viewModel.hasInlineEditor {
+                    InlineEditorSettings(viewModel: viewModel)
+                        .frame(height: 220)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                } else {
+                    ContextualEditorBar(
+                        viewModel: viewModel,
+                        galleryAction: openMainGallery,
+                        overlayAction: openOverlayGallery,
+                        audioGalleryAction: { showingAudioVideoGallery = true },
+                        fileAction: { showingImporter = true }
+                    )
+                    .transition(.opacity)
+                }
             }
+            .animation(.easeOut(duration: 0.16), value: viewModel.hasInlineEditor)
         }
         .background(Color(red: 0.035, green: 0.035, blue: 0.042))
     }
@@ -248,30 +260,6 @@ struct EditorView: View {
             viewModel.importFiles(audioURLs)
         } catch {
             viewModel.errorMessage = "Не удалось извлечь аудио из видео: \(error.localizedDescription)"
-        }
-    }
-}
-
-enum EditorWorkspaceTool: String, CaseIterable, Identifiable {
-    case edit = "Монтаж"
-    case audio = "Аудио"
-    case text = "Текст"
-    case overlay = "Наложение"
-    case effects = "Эффекты"
-    case transitions = "Переходы"
-    case color = "Цвет"
-
-    var id: String { rawValue }
-
-    var icon: String {
-        switch self {
-        case .edit: "slider.horizontal.3"
-        case .audio: "music.note"
-        case .text: "textformat"
-        case .overlay: "square.on.square"
-        case .effects: "sparkles"
-        case .transitions: "rectangle.split.2x1"
-        case .color: "circle.lefthalf.filled"
         }
     }
 }
@@ -575,112 +563,6 @@ private struct ContextualEditorBar: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-    }
-}
-
-private struct EditorToolDock: View {
-    @Binding var selection: EditorWorkspaceTool
-
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 4) {
-                ForEach(EditorWorkspaceTool.allCases) { tool in
-                    Button { selection = tool } label: {
-                        VStack(spacing: 5) {
-                            Image(systemName: tool.icon)
-                                .font(.system(size: 19))
-                            Text(tool.rawValue)
-                                .font(.caption2)
-                        }
-                        .foregroundStyle(selection == tool ? Color.white : Color.white.opacity(0.58))
-                        .frame(minWidth: 68, minHeight: 54)
-                        .background(
-                            selection == tool ? Color.white.opacity(0.1) : .clear,
-                            in: RoundedRectangle(cornerRadius: 10)
-                        )
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 8)
-        }
-        .frame(height: 66)
-        .background(.ultraThinMaterial)
-    }
-}
-
-private struct ContextToolBar: View {
-    let tool: EditorWorkspaceTool
-    @ObservedObject var viewModel: EditorViewModel
-    let galleryAction: () -> Void
-    let overlayAction: () -> Void
-    let audioGalleryAction: () -> Void
-    let fileAction: () -> Void
-
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 4) {
-                switch tool {
-                case .edit:
-                    item("Добавить", "plus", galleryAction)
-                    item("Разделить", "scissors") { viewModel.splitSelected(at: viewModel.playhead) }
-                    item("Скорость", "gauge.with.dots.needle.67percent") { viewModel.openSpeedRamp() }
-                    item("Копия", "plus.square.on.square") { viewModel.duplicateSelected() }
-                    item("Без звука", "speaker.slash") { viewModel.toggleMuteSelected() }
-                    item("Удалить", "trash") { viewModel.deleteSelected() }
-
-                case .audio:
-                    item("Импорт аудио", "music.note.list", fileAction)
-                    item("Из видео", "waveform.badge.plus", audioGalleryAction)
-                    item("Без звука", "speaker.slash") { viewModel.toggleMuteSelected() }
-
-                case .text:
-                    item("Добавить текст", "text.badge.plus") {
-                        viewModel.errorMessage = "Редактор текста появится в следующем обновлении."
-                    }
-
-                case .overlay:
-                    item("Добавить слой", "square.stack.3d.up.badge.plus", overlayAction)
-                    item("Удалить", "trash") { viewModel.deleteSelected() }
-
-                case .effects:
-                    item("Настроить", "sparkles") { viewModel.openClipTools() }
-                    item("Сбросить", "arrow.counterclockwise") { viewModel.resetEffects() }
-
-                case .transitions:
-                    item("Между клипами", "rectangle.split.2x1") { viewModel.openClipTools() }
-
-                case .color:
-                    item("Коррекция", "slider.horizontal.3") { viewModel.openClipTools() }
-                    item("Сбросить", "arrow.counterclockwise") { viewModel.resetEffects() }
-                }
-            }
-            .padding(.horizontal, 8)
-        }
-        .frame(height: 58)
-        .background(Color(red: 0.065, green: 0.065, blue: 0.075))
-    }
-
-    private func item(_ title: String, _ icon: String, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 3) {
-                Image(systemName: icon)
-                    .font(.system(size: 16))
-                Text(title)
-                    .font(.caption2)
-                    .lineLimit(1)
-            }
-            .frame(minWidth: 72, minHeight: 46)
-        }
-        .buttonStyle(.plain)
-        .disabled(
-            viewModel.selectedClip == nil &&
-            title != "Добавить" &&
-            title != "Импорт аудио" &&
-            title != "Из видео" &&
-            title != "Добавить слой" &&
-            title != "Добавить текст"
-        )
     }
 }
 

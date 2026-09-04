@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.8.1
+
+### Fixed
+
+- The timeline now remains visible when opening Speed Ramp, Effects, Transition, or Animation on iPhone.
+- Replaced the old full lower-area mode switch with one CapCut-style bottom interaction region: contextual object tools and nested settings alternate in the same slot.
+- The back button inside nested settings now returns to the selected clip's contextual tools without deselecting the clip.
+- Removed obsolete workspace-dock code so there is only one runtime bottom tool system.
+
+### Changed
+
+- The preview and timeline compact slightly while nested settings are open so the selected clip remains visible and editable above the single bottom settings area.
+
 ## 1.8.0
 
 ### Added
