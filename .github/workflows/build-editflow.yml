@@ -1,5 +1,5 @@
 name: EditFlow iOS Build
-# Final clean CI for EditFlow 1.8.1 contextual bottom panel
+# Final clean CI for EditFlow 1.8.1 contextual bottom panel after cleanup
 
 on:
   workflow_dispatch:
